@@ -1,8 +1,11 @@
 from openai import OpenAI
+from robot_bridge import MockBridge
 import sounddevice as sd
 import soundfile as sf
 
 client = OpenAI()
+bridge = MockBridge()   # 开发期只打印；实机后换成 FreenoveBridge
+
 SAMPLE_RATE = 16000
 DURATION = 5   # 每次录 5 秒
 
@@ -10,6 +13,29 @@ SYSTEM_PROMPT = """あなたは「ARGUS（アーガス）」という6脚の監�
 - 一人称は「ARGUS」。簡潔に、少しメカっぽく、フレンドリーに話す。
 - 返事は1〜2文の短さ。長く喋らない。
 - 日本語で答える。"""
+
+# 動作が確定したときの定型返事
+ACTION_REPLIES = {
+    "forward": "了解、前進します。",
+    "back": "後退します。",
+    "turn_left": "左に曲がります。",
+    "turn_right": "右に曲がります。",
+    "stop": "停止します。",
+}
+
+# 关键词 → 动作。听到这些词就触发对应动作。
+def detect_intent(text):
+    if any(w in text for w in ["前進", "前进", "進んで", "すすめ"]):
+        return "forward"
+    if any(w in text for w in ["後退", "後ろ", "下がっ", "バック"]):
+        return "back"
+    if "左" in text:
+        return "turn_left"
+    if "右" in text:
+        return "turn_right"
+    if any(w in text for w in ["止ま", "停止", "ストップ", "停"]):
+        return "stop"
+    return None
 
 def record(filename="input.wav"):
     print("● 録音中...（5秒、話してください）")
@@ -20,7 +46,7 @@ def record(filename="input.wav"):
 def transcribe(filename="input.wav"):
     with open(filename, "rb") as f:
         res = client.audio.transcriptions.create(
-            model="gpt-4o-transcribe", file=f, language="zh"
+            model="gpt-4o-transcribe", file=f, language="zh"   # 正式 demo 改回 "ja"
         )
     return res.text
 
@@ -42,6 +68,7 @@ def speak(text, filename="reply.wav"):
     data, fs = sf.read(filename)
     sd.play(data, fs)
     sd.wait()
+
 # ───────── メインループ ─────────
 if __name__ == "__main__":
     print("=== ARGUS 音声対話 起動。Ctrl+C で終了 ===")
@@ -55,6 +82,14 @@ if __name__ == "__main__":
             print("（聞き取れませんでした）")
             continue
 
-        reply = ask_argus(user_text)
+        action = detect_intent(user_text)
+        if action:
+            # 是动作指令：触发行走桥 + 给利落确认（不走 LLM，省钱省时）
+            bridge.send(action)
+            reply = ACTION_REPLIES.get(action, "了解。")
+        else:
+            # 不是动作指令（"你好""今何が見える？"等）：交给 LLM 对话
+            reply = ask_argus(user_text)
+
         print("🤖 ARGUS:", reply)
         speak(reply)
