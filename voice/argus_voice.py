@@ -1,7 +1,8 @@
 import threading
+import requests
 from openai import OpenAI
 from robot_bridge import MockBridge
-from paid_poller import poll_paid_commands
+from paid_poller import poll_paid_commands, B_URL
 import sounddevice as sd
 import soundfile as sf
 
@@ -38,6 +39,25 @@ def detect_intent(text):
     if any(w in text for w in ["止ま", "停止", "ストップ", "停"]):
         return "stop"
     return None
+
+# 判断是不是在问"看到了什么"
+def is_vision_question(text):
+    keywords = ["何が見える", "何見える", "見えてる", "見える",
+                "看到", "看见", "什么", "周り", "周囲",
+                "what do you see", "what can you see"]
+    return any(k in text for k in keywords)
+
+# 从 B 读最新检测，翻成一句话给 LLM 参考
+def get_detections():
+    try:
+        events = requests.get(f"{B_URL}/events", timeout=3).json()
+        if not events:
+            return "今は特に何も検出していません。"
+        items = [f"{e['type']}(信頼度{e.get('confidence', '?')})" for e in events]
+        return "検出したもの: " + "、".join(items)
+    except Exception as e:
+        print("[events]", e)
+        return "検出データが取得できませんでした。"
 
 def record(filename="input.wav"):
     print("● 録音中...（5秒、話してください）")
@@ -88,8 +108,12 @@ def voice_loop():
             # 是动作指令：触发行走桥 + 利落确认（不走 LLM）
             bridge.send(action)
             reply = ACTION_REPLIES.get(action, "了解。")
+        elif is_vision_question(user_text):
+            # 是"看到什么"：读检测数据，让 LLM 用它来回答
+            detections = get_detections()
+            reply = ask_argus(f"{user_text}\n\n（参考：{detections}）")
         else:
-            # 不是动作指令：交给 LLM 对话
+            # 普通对话
             reply = ask_argus(user_text)
 
         print("🤖 ARGUS:", reply)
