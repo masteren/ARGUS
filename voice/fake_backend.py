@@ -1,11 +1,11 @@
-# fake_backend.py —— 假装是 B 的后端，只为让 C 能独立开发。
-# 集成时删掉它，把地址换成真 B 即可。
+# fake_backend.py —— B のバックエンドを模した偽サーバー。C が単独で開発できるようにするためのもの。
+# 統合時にはこれを削除し、アドレスを本物の B に差し替えればよい。
 from flask import Flask, jsonify
 import time
 
 app = Flask(__name__)
 
-# 假的课金命令队列：模拟"观众付费 → B 生成的动作"
+# 偽の課金コマンドキュー：「視聴者が課金 → B が生成した動作」を模擬する
 fake_commands = [
     {"id": 1, "action": "forward",    "payer_name": "太郎", "amount": 100},
     {"id": 2, "action": "turn_left",  "payer_name": "花子", "amount": 100},
@@ -14,7 +14,7 @@ fake_commands = [
 
 @app.route("/commands")
 def get_commands():
-    # 第一次返回全部，之后返回空（模拟"取走就没了"）
+    # 初回は全件返し、以降は空を返す（「取り出したらなくなる」を模擬）
     global fake_commands
     out = fake_commands
     fake_commands = []
@@ -22,10 +22,10 @@ def get_commands():
 
 @app.route("/commands/<int:cid>/done", methods=["POST"])
 def mark_done(cid):
-    print(f"  ✔ B 收到完成报告: command {cid}")
+    print(f"  ✔ B が完了報告を受信: command {cid}")
     return jsonify({"ok": True})
 
-# 假的检测数据：模拟"A 检测到的东西"，给"看到了什么"用
+# 偽の検出データ：「A が検出したもの」を模擬し、「何が見える」の応答に使う
 @app.route("/events")
 def get_events():
     return jsonify([
@@ -34,5 +34,5 @@ def get_events():
     ])
 
 if __name__ == "__main__":
-    print("=== 假后端(伪B) 起動 http://localhost:5001 ===")
+    print("=== 偽バックエンド(擬似B) 起動 http://localhost:5001 ===")
     app.run(port=5001)

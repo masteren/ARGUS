@@ -5,12 +5,12 @@ from robot_bridge import MockBridge
 from paid_poller import poll_paid_commands, B_URL
 import sounddevice as sd
 import soundfile as sf
+import numpy as np
 
 client = OpenAI()
-bridge = MockBridge()   # 开发期只打印；实机后换成 FreenoveBridge
+bridge = MockBridge()   # 開発期はログ出力のみ。実機接続後は FreenoveBridge に差し替える
 
 SAMPLE_RATE = 16000
-DURATION = 5   # 每次录 5 秒
 
 SYSTEM_PROMPT = """あなたは「ARGUS（アーガス）」という6脚の監視ロボットです。
 - 一人称は「ARGUS」。簡潔に、少しメカっぽく、フレンドリーに話す。
@@ -26,9 +26,9 @@ ACTION_REPLIES = {
     "stop": "停止します。",
 }
 
-# 关键词 → 动作。听到这些词就触发对应动作。
+# キーワード → 動作。これらの語を聞き取ったら対応する動作を発火させる。
 def detect_intent(text):
-    if any(w in text for w in ["前進", "前进", "進んで", "すすめ"]):
+    if any(w in text for w in ["前進", "進んで", "すすめ"]):
         return "forward"
     if any(w in text for w in ["後退", "後ろ", "下がっ", "バック"]):
         return "back"
@@ -40,14 +40,14 @@ def detect_intent(text):
         return "stop"
     return None
 
-# 判断是不是在问"看到了什么"
+# 「何が見えているか」を尋ねているかどうかを判定する
 def is_vision_question(text):
     keywords = ["何が見える", "何見える", "見えてる", "見える",
-                "看到", "看见", "什么", "周り", "周囲",
+                "周り", "周囲",
                 "what do you see", "what can you see"]
     return any(k in text for k in keywords)
 
-# 从 B 读最新检测，翻成一句话给 LLM 参考
+# B から最新の検出結果を読み取り、一文にまとめて LLM の参考にする
 def get_detections():
     try:
         events = requests.get(f"{B_URL}/events", timeout=3).json()
@@ -60,15 +60,31 @@ def get_detections():
         return "検出データが取得できませんでした。"
 
 def record(filename="input.wav"):
-    print("● 録音中...（5秒、話してください）")
-    audio = sd.rec(int(DURATION * SAMPLE_RATE), samplerate=SAMPLE_RATE, channels=1)
-    sd.wait()
+    """録音して filename に保存。取り消された場合は False を返す。"""
+    input("\n▶ Enter を押して録音開始...")            # 1回目の Enter で録音スタート
+    print("● 録音中... 話し終わったら Enter / 言い間違えたら r+Enter で取り消し")
+    frames = []
+    # マイク入力をコールバックで frames にためていく。長さは話者が Enter を押すまで可変
+    stream = sd.InputStream(
+        samplerate=SAMPLE_RATE, channels=1,
+        callback=lambda indata, n, t, status: frames.append(indata.copy()),
+    )
+    with stream:
+        cmd = input()                                  # 2回目の入力で録音停止。'r' なら取り消し
+    if cmd.strip().lower() == "r":
+        print("↺ 取り消しました。もう一度どうぞ")
+        return False
+    if not frames:
+        sf.write(filename, np.zeros(1, dtype="float32"), SAMPLE_RATE)
+        return True
+    audio = np.concatenate(frames, axis=0)
     sf.write(filename, audio, SAMPLE_RATE)
+    return True
 
 def transcribe(filename="input.wav"):
     with open(filename, "rb") as f:
         res = client.audio.transcriptions.create(
-            model="gpt-4o-transcribe", file=f, language="zh"   # 正式 demo 改回 "ja"
+            model="gpt-4o-transcribe", file=f, language="ja"
         )
     return res.text
 
@@ -91,11 +107,11 @@ def speak(text, filename="reply.wav"):
     sd.play(data, fs)
     sd.wait()
 
-# ───────── メインループ（语音线）─────────
+# ───────── メインループ（音声スレッド）─────────
 def voice_loop():
     while True:
-        input("\n▶ Enter を押して話しかける...")   # 按回车再开始录,避免抢话
-        record()
+        if not record():   # 1回目Enterで録音開始→2回目Enterで停止。r+Enterでこの録音を破棄
+            continue
         user_text = transcribe()
         print("🧑 あなた:", user_text)
 
@@ -105,15 +121,15 @@ def voice_loop():
 
         action = detect_intent(user_text)
         if action:
-            # 是动作指令：触发行走桥 + 利落确认（不走 LLM）
+            # 動作指令の場合：歩行ブリッジを発火 + 即座に定型確認を返す（LLMは通さない）
             bridge.send(action)
             reply = ACTION_REPLIES.get(action, "了解。")
         elif is_vision_question(user_text):
-            # 是"看到什么"：读检测数据，让 LLM 用它来回答
+            # 「何が見える」の場合：検出データを読み、それを使って LLM に答えさせる
             detections = get_detections()
             reply = ask_argus(f"{user_text}\n\n（参考：{detections}）")
         else:
-            # 普通对话
+            # 通常の対話
             reply = ask_argus(user_text)
 
         print("🤖 ARGUS:", reply)
@@ -123,11 +139,11 @@ def voice_loop():
 if __name__ == "__main__":
     print("=== ARGUS 音声対話 + 課金 起動。Ctrl+C で終了 ===")
 
-    # 课金轮询放后台线程（daemon=主程序退出时它自动结束）
+    # 課金ポーリングはバックグラウンドスレッドで実行（daemon=メインプログラム終了時に自動終了）
     paid_thread = threading.Thread(
         target=poll_paid_commands, args=(bridge,), daemon=True
     )
     paid_thread.start()
 
-    # 语音在主线程跑
+    # 音声はメインスレッドで実行
     voice_loop()

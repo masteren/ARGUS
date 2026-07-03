@@ -1,7 +1,7 @@
-# paid_poller.py —— 第二路输入：从 B 的队列取课金动作，喂给同一个 bridge。
+# paid_poller.py —— 第2の入力経路：B のキューから課金動作を取り出し、同じ bridge に流す。
 import requests, time
 
-B_URL = "http://localhost:5001"   # 集成时改成真 B 的地址
+B_URL = "http://localhost:5001"   # 統合時には本物の B のアドレスに変更する
 
 def poll_paid_commands(bridge, action_replies=None, interval=2):
     print("💰 課金ポーリング開始...")
@@ -12,7 +12,7 @@ def poll_paid_commands(bridge, action_replies=None, interval=2):
                 action = c["action"]
                 payer = c.get("payer_name", "誰か")
                 print(f"💰 課金アクション: {payer} さん → {action}")
-                bridge.send(action, paid=True)        # 让机器人动
+                bridge.send(action, paid=True)        # ロボットを動かす
                 requests.post(f"{B_URL}/commands/{c['id']}/done", timeout=3)
         except Exception as e:
             print("[poll]", e)
