@@ -1,39 +1,27 @@
 from ultralytics import YOLO
 import cv2
 import time
-import tkinter as tk
-from tkinter import filedialog
 import requests
 import base64
-import winsound
 from datetime import datetime
 
 # --- Config ---
-SEUIL_INITIAL   = 0.40   # premier screenshot à 40%
-SEUIL_INCREMENT = 0.10   # +10% pour chaque screenshot suivant
-MAX_ALERTES     = 5      # 40% → 50% → 60% → 70% → 80% = 5 screenshots max
-FRAMES_REQUIS   = 3      # frames consécutifs pour confirmer avant screenshot
-WARMUP          = 2      # secondes d'attente après chargement
+SEUIL_INITIAL   = 0.40
+SEUIL_INCREMENT = 0.10
+MAX_ALERTES     = 5
+FRAMES_REQUIS   = 3
+WARMUP          = 2
 
-model = YOLO("yolov8n.pt")
+model = YOLO("yolov8n_ncnn_model")
 
 mode             = "normal"
 nom_cible        = None
 hist_cible       = None
 nb_alertes       = 0
-prochain_seuil   = SEUIL_INITIAL   # seuil du prochain screenshot
+prochain_seuil   = SEUIL_INITIAL
 frames_positifs  = 0
 temps_chargement = 0
-
-def selectionner_image():
-    root = tk.Tk()
-    root.withdraw()
-    chemin = filedialog.askopenfilename(
-        title="Sélectionner une image cible",
-        filetypes=[("Images", "*.jpg *.jpeg *.png *.bmp")]
-    )
-    root.destroy()
-    return chemin
+dernier_log_fps  = 0  # timestamp du dernier affichage FPS
 
 def histogramme(image):
     img = cv2.resize(image, (256, 256))
@@ -68,102 +56,49 @@ def prendre_screenshot(frame, sim):
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     fichier = f"detection_{ts}.jpg"
     cv2.imwrite(fichier, frame)
-    print(f"[TARGET] {nom_cible} — {sim:.0%} | screenshot {nb_alertes}/{MAX_ALERTES} | prochain seuil : {prochain_seuil:.0%}")
-    try:
-        winsound.Beep(1000, 300)
-    except:
-        pass
+    print(f"[TARGET] {nom_cible} — {sim:.0%} | screenshot {nb_alertes}/{MAX_ALERTES} | prochain seuil : {prochain_seuil:.0%}", flush=True)
     envoyer_post(frame, sim)
-
-    # Max atteint → retour automatique en mode normal
     if nb_alertes >= MAX_ALERTES:
-        print(f"[INFO] {MAX_ALERTES} screenshots atteints — retour automatique en mode normal")
+        print(f"[INFO] {MAX_ALERTES} screenshots atteints — retour mode normal", flush=True)
         mode = "normal"
 
 cap = cv2.VideoCapture(0)
 fps_t = time.time()
-print("Flux démarré | 'u' charger cible | 'n' mode normal | 'q' quitter")
+print("Flux démarré — Ctrl+C pour quitter", flush=True)
 
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        break
+try:
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
 
-    now = time.time()
-    fps = 1 / (now - fps_t)
-    fps_t = now
+        now = time.time()
+        fps = 1 / (now - fps_t)
+        fps_t = now
 
-    # ── MODE NORMAL ───────────────────────────────────────────────
-    if mode == "normal":
-        results = model(frame, verbose=False)
-        image_annotee = results[0].plot()
-        cv2.putText(image_annotee, "MODE: NORMAL", (10, 60),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        if mode == "normal":
+            results = model(frame, verbose=False)
+            if now - dernier_log_fps >= 10:
+                print(f"FPS: {fps:.1f} | MODE: NORMAL", flush=True)
+                dernier_log_fps = now
 
-    # ── MODE RECHERCHE ────────────────────────────────────────────
-    elif mode == "recherche":
-        image_annotee = frame.copy()
-
-        if now - temps_chargement < WARMUP:
-            restant = WARMUP - (now - temps_chargement)
-            cv2.putText(image_annotee, f"Preparation... {restant:.1f}s", (10, 60),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 200, 255), 2)
-            frames_positifs = 0
-
-        else:
-            sim = comparer(hist_cible, histogramme(frame))
-
-            # Frame positif si au-dessus du prochain seuil
-            if sim >= prochain_seuil:
-                frames_positifs += 1
-                couleur = (0, 255, 0)
+        elif mode == "recherche":
+            if now - temps_chargement < WARMUP:
+                frames_positifs = 0
             else:
-                frames_positifs = 0
-                couleur = (0, 255, 255)
+                sim = comparer(hist_cible, histogramme(frame))
+                if sim >= prochain_seuil:
+                    frames_positifs += 1
+                else:
+                    frames_positifs = 0
+                if frames_positifs >= FRAMES_REQUIS:
+                    prendre_screenshot(frame, sim)
+                    frames_positifs = 0
+                if now - dernier_log_fps >= 10:
+                    print(f"FPS: {fps:.1f} | {sim:.0%} | prochain: {prochain_seuil:.0%} | {nb_alertes}/{MAX_ALERTES}", flush=True)
+                    dernier_log_fps = now
 
-            # Déclenche screenshot après FRAMES_REQUIS frames consécutifs
-            if frames_positifs >= FRAMES_REQUIS:
-                prendre_screenshot(frame, sim)
-                frames_positifs = 0
-
-            cv2.putText(image_annotee,
-                        f"RECHERCHE: {nom_cible} | {sim:.0%} | prochain: {prochain_seuil:.0%} | {nb_alertes}/{MAX_ALERTES} | frames: {frames_positifs}/{FRAMES_REQUIS}",
-                        (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.45, couleur, 2)
-
-    cv2.putText(image_annotee, f"FPS: {fps:.1f}", (10, 30),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
-    cv2.imshow("ARGUS", image_annotee)
-
-    touche = cv2.waitKey(1) & 0xFF
-
-    if touche == ord('q'):
-        break
-
-    elif touche == ord('u'):
-        # Reset complet avant ouverture du dialogue
-        hist_cible      = None
-        mode            = "normal"
-        nb_alertes      = 0
-        prochain_seuil  = SEUIL_INITIAL
-        frames_positifs = 0
-
-        chemin = selectionner_image()
-        if chemin:
-            img              = cv2.imread(chemin)
-            nom_cible        = chemin.split("/")[-1]
-            hist_cible       = histogramme(img)
-            mode             = "recherche"
-            temps_chargement = time.time()
-            print(f"[RECHERCHE] Cible : {nom_cible} | premier seuil : {prochain_seuil:.0%}")
-
-    elif touche == ord('n'):
-        mode            = "normal"
-        hist_cible      = None
-        nom_cible       = None
-        nb_alertes      = 0
-        prochain_seuil  = SEUIL_INITIAL
-        frames_positifs = 0
-        print("[NORMAL]")
+except KeyboardInterrupt:
+    print("Arrêt.")
 
 cap.release()
-cv2.destroyAllWindows()
