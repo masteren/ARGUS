@@ -1,6 +1,7 @@
 from ultralytics import YOLO
 import cv2
 import time
+import os
 import requests
 import base64
 from datetime import datetime
@@ -9,7 +10,11 @@ from datetime import datetime
 # B (ARGUS_backend/app.py) tourne sur le port 5000.
 #   ・B sur la même machine   → "http://localhost:5000"
 #   ・B sur une autre machine  → "http://<IP LAN de B>:5000"
-B_URL      = "http://localhost:5000"
+# Le port est surchargeable par la variable d'environnement PORT (même variable
+# que B/app.py). Défaut = 5000, conforme au contrat. Sur macOS, AirPlay occupe
+# 5000 : lancer les tests d'intégration avec PORT=5001.
+B_PORT     = os.environ.get("PORT", "5000")
+B_URL      = "http://localhost:%s" % B_PORT
 UPLOAD_URL = f"{B_URL}/upload"                 # 【CORRIGÉ】était /detection
 
 # ── Source caméra (DÉCISION 2 = option 1 : seul B ouvre la caméra) ──────────

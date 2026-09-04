@@ -5,6 +5,8 @@ from datetime import datetime
 import uuid
 import time
 import threading
+import json
+import os
 
 try:
     import cv2
@@ -18,7 +20,14 @@ except ImportError:
 app = Flask(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = BASE_DIR / "argus.db"
+
+# ── 環境変数で上書きできる設定（既定値は契約どおり）───────────────
+# PORT     : macOS の AirPlay Receiver が 5000 を掴むため、ローカル結合試験は
+#            PORT=5001 で逃がす。未設定なら 5000（正本の既定値）。
+# ARGUS_DB : 結合試験が本番の argus.db を壊さないよう、使い捨てDBを指せる。
+PORT = int(os.environ.get("PORT", "5000"))
+DB_PATH = Path(os.environ.get("ARGUS_DB") or (BASE_DIR / "argus.db"))
+
 CAMERA_INDEX = 0
 CAMERA_WIDTH = 640
 CAMERA_HEIGHT = 480
@@ -61,6 +70,13 @@ ACTIONS = {
 }
 
 
+# ミッション（¥500 の目玉 / CONTRACT.md ①）
+# search_person を課金すると missions に active 行が立ち、A から
+# type が "mission_" で始まる検出が届いた時点で success になる。
+MISSION_ACTIONS = {"search_person"}
+MISSION_DETECTION_PREFIX = "mission_"
+
+
 # ==================================================
 # 共通処理
 # ==================================================
@@ -81,9 +97,31 @@ def rows_to_dicts(rows):
     return [dict(row) for row in rows]
 
 
+def dump_json_field(value):
+    """bbox / frame_wh のようなリストをTEXT列へ保存する。Noneはそのまま。"""
+    return None if value is None else json.dumps(value)
+
+
+def load_json_field(text):
+    """TEXT列に入れた bbox / frame_wh を読み戻す。壊れていたら None。"""
+    if not text:
+        return None
+    try:
+        return json.loads(text)
+    except (TypeError, ValueError):
+        return None
+
+
 # ==================================================
 # DB初期化
 # ==================================================
+def ensure_column(cur, table, column, decl):
+    """既存DBを作り直さずに済むよう、後から足した列を必要なときだけ追加する。"""
+    existing = {row["name"] for row in cur.execute("PRAGMA table_info(%s)" % table)}
+    if column not in existing:
+        cur.execute("ALTER TABLE %s ADD COLUMN %s %s" % (table, column, decl))
+
+
 def init_db():
     with get_connection() as con:
         cur = con.cursor()
@@ -96,6 +134,8 @@ def init_db():
                 type TEXT NOT NULL,
                 confidence REAL,
                 image TEXT,
+                bbox TEXT,
+                frame_wh TEXT,
                 created_at TEXT NOT NULL
             )
             """)
@@ -130,6 +170,27 @@ def init_db():
                 FOREIGN KEY (transaction_id) REFERENCES transactions(id)
             )
             """)
+
+        # search_person ミッションの状態（CONTRACT.md ①）
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS missions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                transaction_id INTEGER,
+                command_id INTEGER,
+                action TEXT NOT NULL,
+                action_label TEXT NOT NULL,
+                payer_name TEXT NOT NULL,
+                status TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                success_at TEXT,
+                detection_id INTEGER,
+                FOREIGN KEY (transaction_id) REFERENCES transactions(id)
+            )
+            """)
+
+        # 既存DB（bbox列が無い頃のもの）を壊さずに移行する
+        ensure_column(cur, "detections", "bbox", "TEXT")
+        ensure_column(cur, "detections", "frame_wh", "TEXT")
 
         con.commit()
 
@@ -332,22 +393,60 @@ def upload_detection():
     confidence = data.get("confidence")
     image = data.get("image")
     timestamp = data.get("timestamp") or now_text()
+    bbox = data.get("bbox")          # 任意：[x1,y1,x2,y2]（ピクセル）
+    frame_wh = data.get("frame_wh")  # 任意：[w,h]（ピクセル）
 
     if not detection_type:
         return jsonify({"ok": False, "error": "type が必要です"}), 400
 
     created_at = now_text()
+    mission_success = False
+    mission_id = None
 
     with get_connection() as con:
         cur = con.cursor()
         cur.execute(
             """
-            INSERT INTO detections (timestamp, type, confidence, image, created_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO detections
+            (timestamp, type, confidence, image, bbox, frame_wh, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (timestamp, detection_type, confidence, image, created_at),
+            (
+                timestamp,
+                detection_type,
+                confidence,
+                image,
+                dump_json_field(bbox),
+                dump_json_field(frame_wh),
+                created_at,
+            ),
         )
         detection_id = cur.lastrowid
+
+        # type が "mission_" で始まる検出は、進行中ミッションの成功報告として扱う
+        if detection_type.startswith(MISSION_DETECTION_PREFIX):
+            active = cur.execute("""
+                SELECT id
+                FROM missions
+                WHERE status = 'active'
+                ORDER BY id DESC
+                LIMIT 1
+                """).fetchone()
+
+            if active is not None:
+                cur.execute(
+                    """
+                    UPDATE missions
+                    SET status = 'success',
+                        success_at = ?,
+                        detection_id = ?
+                    WHERE id = ?
+                    """,
+                    (created_at, detection_id, active["id"]),
+                )
+                mission_success = True
+                mission_id = active["id"]
+
         con.commit()
 
     return jsonify(
@@ -355,6 +454,8 @@ def upload_detection():
             "ok": True,
             "message": "検出イベントを保存しました",
             "detection_id": detection_id,
+            "mission_success": mission_success,
+            "mission_id": mission_id,
         }
     )
 
@@ -376,7 +477,14 @@ def get_events():
             (limit,),
         ).fetchall()
 
-    return jsonify({"ok": True, "events": rows_to_dicts(rows)})
+    events = rows_to_dicts(rows)
+
+    # bbox / frame_wh はTEXT列なので、JSONとして返す前にリストへ戻す
+    for event in events:
+        event["bbox"] = load_json_field(event.get("bbox"))
+        event["frame_wh"] = load_json_field(event.get("frame_wh"))
+
+    return jsonify({"ok": True, "events": events})
 
 
 # ==================================================
@@ -439,6 +547,29 @@ def pay():
         )
         command_id = cur.lastrowid
 
+        # 3. ミッション課金なら missions に active 行を立てる
+        #    （成功判定は A からの mission_* 検出を受ける /upload 側）
+        mission_id = None
+
+        if action in MISSION_ACTIONS:
+            cur.execute(
+                """
+                INSERT INTO missions
+                (transaction_id, command_id, action, action_label, payer_name, status, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    transaction_id,
+                    command_id,
+                    action,
+                    action_label,
+                    payer_name,
+                    "active",
+                    created_at,
+                ),
+            )
+            mission_id = cur.lastrowid
+
         con.commit()
 
     return jsonify(
@@ -447,6 +578,7 @@ def pay():
             "message": "決済が完了し、ロボット命令を登録しました",
             "transaction_id": transaction_id,
             "command_id": command_id,
+            "mission_id": mission_id,
             "amount": amount,
             "action": action,
             "action_label": action_label,
@@ -506,6 +638,100 @@ def command_done(command_id):
             "ok": True,
             "message": "コマンドを完了にしました",
             "command_id": command_id,
+        }
+    )
+
+
+# ==================================================
+# API：ミッション状態（CONTRACT.md ①）
+# ==================================================
+@app.route("/mission/active")
+def mission_active():
+    """進行中（active）のミッションを返す。無ければ active=false。"""
+    with get_connection() as con:
+        cur = con.cursor()
+        row = cur.execute("""
+            SELECT *
+            FROM missions
+            WHERE status = 'active'
+            ORDER BY id DESC
+            LIMIT 1
+            """).fetchone()
+
+    return jsonify(
+        {
+            "ok": True,
+            "active": row is not None,
+            "mission": dict(row) if row is not None else None,
+        }
+    )
+
+
+@app.route("/mission/latest")
+def mission_latest():
+    """最後に登録されたミッションを状態つきで返す（公開ページの成功演出用）。"""
+    with get_connection() as con:
+        cur = con.cursor()
+        row = cur.execute("""
+            SELECT *
+            FROM missions
+            ORDER BY id DESC
+            LIMIT 1
+            """).fetchone()
+
+    return jsonify(
+        {
+            "ok": True,
+            "mission": dict(row) if row is not None else None,
+            "status": row["status"] if row is not None else None,
+        }
+    )
+
+
+# ==================================================
+# API：HUDオーバーレイ（CONTRACT.md ②）
+# 公開ページが /video_feed の上に描く「最新の bbox」を返す
+# ==================================================
+def overlay_age_sec(created_at):
+    """描画側が古い枠を消せるよう、検出からの経過秒を返す。"""
+    try:
+        return round(
+            (datetime.now() - datetime.fromisoformat(created_at)).total_seconds(), 2
+        )
+    except (TypeError, ValueError):
+        return None
+
+
+@app.route("/overlay")
+def overlay():
+    with get_connection() as con:
+        cur = con.cursor()
+        row = cur.execute("""
+            SELECT id, timestamp, type, confidence, bbox, frame_wh, created_at
+            FROM detections
+            WHERE bbox IS NOT NULL
+            ORDER BY id DESC
+            LIMIT 1
+            """).fetchone()
+
+    if row is None:
+        return jsonify(
+            {"ok": True, "bbox": None, "frame_wh": None, "detection": None}
+        )
+
+    detection = dict(row)
+    detection["bbox"] = load_json_field(row["bbox"])
+    detection["frame_wh"] = load_json_field(row["frame_wh"])
+
+    return jsonify(
+        {
+            "ok": True,
+            "bbox": detection["bbox"],
+            "frame_wh": detection["frame_wh"],
+            "type": detection["type"],
+            "confidence": detection["confidence"],
+            "age_sec": overlay_age_sec(detection["created_at"]),
+            "detection": detection,
         }
     )
 
@@ -641,6 +867,6 @@ if __name__ == "__main__":
     app.run(
         debug=True,
         host="0.0.0.0",
-        port=5000,
+        port=PORT,
         use_reloader=False,
     )

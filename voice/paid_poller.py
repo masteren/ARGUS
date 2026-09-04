@@ -7,9 +7,13 @@
 #  ・B の /commands の1件は {id, action, action_label, source, status, created_at, ...}。
 #    payer_name は含まれないので、表示用に action_label を優先で使う。
 # ──────────────────────────────────────────────────────────
+import os
 import requests, time
 
-B_URL = "http://localhost:5000"   # 実機/集成時は B のアドレス（例: http://192.168.x.x:5000 や Azure のURL）
+#  ・ポートは環境変数 PORT で上書きできる（B の app.py と同じ変数）。既定は契約どおり 5000。
+#    macOS は AirPlay Receiver が 5000 を掴むので、ローカル結合試験は PORT=5001。
+B_PORT = os.environ.get("PORT", "5000")
+B_URL = "http://localhost:%s" % B_PORT   # 実機/集成で別ホストなら、ここを B のアドレスに変える
 
 def _extract_list(payload, key):
     """B は {"ok":true, key:[...]} 形式、偽サーバーは [...] 形式。両方を許容する。"""

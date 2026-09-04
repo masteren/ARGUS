@@ -8,13 +8,28 @@
 
 | メソッド | パス | 誰が呼ぶ | リクエスト | レスポンス |
 |---|---|---|---|---|
-| POST | `/upload` | A → B | `{timestamp, type, confidence, image}` (+任意 `bbox`,`frame_wh`) | `{"ok":true, ...}` |
+| POST | `/upload` | A → B | `{timestamp, type, confidence, image}` (+任意 `bbox`,`frame_wh`) | `{"ok":true, "detection_id":N, "mission_success":bool, "mission_id":N\|null}` |
 | GET  | `/events` | C, ダッシュボード | — | `{"ok":true, "events":[...]}` |
 | POST | `/pay` | 観客Web → B | `{amount, action, payer_name}` | `{"ok":true, ...}` |
 | GET  | `/commands` | C → B | — | `{"ok":true, "commands":[...]}` |
 | POST | `/commands/{id}/done` | C → B | — | `{"ok":true}` |
 | GET  | `/ranking`, `/api/ranking` | 公開ページ | — | ランキング |
 | GET  | `/video_feed` | 公開ページ, **A** | — | MJPEG ストリーム |
+| GET  | `/mission/active` | 公開ページ, C | — | `{"ok":true, "active":bool, "mission":{...}\|null}` |
+| GET  | `/mission/latest` | 公開ページ | — | `{"ok":true, "mission":{...}\|null, "status":"active"\|"success"\|null}` |
+| GET  | `/overlay` | 公開ページ | — | `{"ok":true, "bbox":[x1,y1,x2,y2]\|null, "frame_wh":[w,h]\|null, "type", "confidence", "age_sec"}` |
+| GET  | `/health` | 全員 | — | `{"ok":true}` |
+
+### ポート（契約は 5000 のまま。環境変数で逃がせるだけ）
+
+B の `app.py`、A の `detection_webcam.py`、C の `paid_poller.py` は同じ環境変数
+`PORT` を読む（未設定なら **5000＝契約どおり**）。macOS は AirPlay レシーバーが
+5000 を掴むので、ローカル結合試験だけ `PORT=5001` で逃がす。
+B は `ARGUS_DB` で使い捨てDBも指定できる（未設定なら `ARGUS_backend/argus.db`）。
+
+### DBのテーブル（4つ）
+
+`detections`（`bbox`,`frame_wh` 列を追加）/ `transactions` / `command_queue` / `missions`
 
 > ⚠️ **落とし穴（実際に起きていた不一致）**
 > - `/events` と `/commands` は **`{"ok":true, "events/commands":[...]}` で包まれている**。裸のリストではない。C の旧コードは裸リスト前提で **クラッシュしていた** → 修正済み。
@@ -35,16 +50,23 @@
 
 ## 残タスク（統合で3方が少しずつ足す）
 
-### ① `search_person` ミッション閉ループ（¥500 の目玉・最後に接続）
-現状：C の bridge は「巡回モーション」だけ実装。成功判定が未接続。
-- **A**：`GET /commands` に `search_person` があればカメラ検出を開始し、人物を検出したら `type="mission_person"` で `/upload`。
-- **B**：`mission_person` を受けたら該当ミッションを成功にし、公開ページで成功演出＋課金者へ通知。
-- **C**：巡回モーション（実装済み）＋ 完了を `/commands/{id}/done`。
+### ① `search_person` ミッション閉ループ（¥500 の目玉）
+- **B（実装済み）**：`/pay action=search_person` で `missions` に `status='active'` の行を作る。
+  `type` が `mission_` で始まる `/upload` を受けたら、最新の active ミッションを `success` にして
+  `/upload` のレスポンスに `mission_success:true` を返す。状態は `/mission/active`・`/mission/latest`。
+- **C（実装済み）**：巡回モーション ＋ 完了を `/commands/{id}/done`。
+- **A（TODO）**：`GET /commands` に `search_person` があればカメラ検出を開始し、人物を検出したら
+  `type="mission_person"` で `/upload`。← いまは A 側のこの起動トリガだけが未接続。
+- **公開ページ（TODO）**：`/mission/latest` を見て成功演出＋課金者へ通知。
+
+データ閉ループ（A の起動トリガを除く）は `bash tools/smoketest.sh` で回帰確認できる。
 
 ### ② ブラウザ HUD オーバーレイ（決済2=選択1の残り）
 A は検出のたびに `bbox`,`frame_wh` を `/upload` に含める（実装済み）。
-- **B（TODO）**：最新の bbox を公開ページに渡す口を作る（`/events` に bbox を含めるか、`/overlay` を新設）。
-- **公開ページ（フロント）**：`/video_feed` の上に bbox を JS で描画。少し遅延するので ~1s 保持で滑らかに。
+- **B（実装済み）**：`detections` に `bbox`,`frame_wh` を保存し、`GET /overlay` が最新の1件を返す。
+  `/events` でも bbox はJSON文字列ではなくリストで返る。`/overlay` の `age_sec`（検出からの経過秒）を
+  見れば「古い枠は消す」判断ができる。
+- **公開ページ（フロント / TODO）**：`/video_feed` の上に bbox を JS で描画。少し遅延するので ~1s 保持で滑らかに。
 
 ### ③ 左右の符号確認
 `turn_left/right` の angle 符号は実機で反転が必要な場合あり。ベンチで1回確認。

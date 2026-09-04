@@ -27,11 +27,33 @@ CONTRACT.md           正本の契約表＋残タスク（必読）
 
 翻したいとき：決策2を選択2にするなら A を `VideoCapture(0)` に戻し B の `/video_feed` を止めて A が描画付きで serve する。
 
+## まず通っているか確認する（1コマンド・依存なし）
+
+```bash
+bash tools/smoketest.sh
+```
+
+実機・マイク・カメラ・OpenAI キーなしで、**三モジュールのデータ閉ループ**だけを検証する
+（音声 STT/TTS は対象外）。C は書き直したコピーではなく `voice/paid_poller.py` の
+`poll_paid_commands` を **そのまま import して** 回すので、本物の接口を叩いている。
+
+検証する経路：
+`/pay` → `/commands` → C の bridge → `/commands/{id}/done` →
+`/pay search_person` → `/mission/active` → `/upload type=mission_person` →
+`mission_success` / `/mission/latest` / `/overlay` → `/api/ranking`
+
+各ステップに ✓ / ✗ を出し、1つでも落ちれば終了コードは非0。終了時に B を停止し、
+使い捨てDB（`ARGUS_backend/argus.smoketest.db`）を消すので、本番の `argus.db` は触らない。
+既定ポートは **5001**（macOS の AirPlay レシーバーが 5000 を掴むため）。
+5001 も塞がっていたら `PORT=5003 bash tools/smoketest.sh`。
+
 ## 動かし方（統合テスト・全部同じPCでOK）
 
 ```bash
 # 1) B（後端＋Web＋video_feed）
 cd ARGUS_backend && python3 app.py            # → http://localhost:5000
+# macOS で 5000 が AirPlay に取られている場合： PORT=5001 python3 app.py
+#   （A の detection_webcam.py と C の paid_poller.py も同じ PORT を読む）
 
 # 2) A（検出。Bのカメラを共有）
 cd vision && python3 detection_webcam.py
