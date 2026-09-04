@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>ARGUS Supporter Ranking</title>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='style.css') }}"
+    >
+
+    <link
+        href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700;800&display=swap"
+        rel="stylesheet"
+    >
+</head>
+
+<body class="ranking-page">
+
+    <!-- ==================================================
+         ヘッダー
+         ================================================== -->
+    <header class="ranking-header">
+        <div>
+            <p class="ranking-header-label">AI SURVEILLANCE ROBOT</p>
+            <h1>ARGUS SUPPORTER RANKING</h1>
+        </div>
+
+        <div class="ranking-header-status">
+            <span class="ranking-status-dot"></span>
+            SYSTEM ONLINE
+        </div>
+    </header>
+
+
+    <!-- ==================================================
+         メインコンテンツ
+         ================================================== -->
+    <main class="ranking-layout">
+
+        <!-- ==================================================
+             左側：投げ銭ランキング
+             ================================================== -->
+        <section class="supporter-panel">
+
+            <div class="ranking-panel-header">
+                <div>
+                    <p class="ranking-panel-label">DONATION DATABASE</p>
+                    <h2>TOP SUPPORTERS</h2>
+                </div>
+
+                <span class="ranking-sync">AUTO SYNC</span>
+            </div>
+
+
+            <!-- 1位～3位 -->
+            <div class="podium-grid">
+
+                <!-- 2位 -->
+                <article class="podium-card podium-silver">
+                    {% if ranking|length >= 2 %}
+                        <span class="podium-medal">🥈</span>
+                        <p class="podium-rank">RANK 02</p>
+                        <h3>{{ ranking[1]["payer_name"] }}</h3>
+                        <strong>
+                            ¥{{ "{:,}".format(ranking[1]["total_amount"]) }}
+                        </strong>
+                        <small>{{ ranking[1]["pay_count"] }} COMMANDS</small>
+                    {% else %}
+                        <span class="podium-medal">🥈</span>
+                        <p class="podium-rank">RANK 02</p>
+                        <h3>NO DATA</h3>
+                        <strong>¥0</strong>
+                        <small>0 COMMANDS</small>
+                    {% endif %}
+                </article>
+
+
+                <!-- 1位 -->
+                <article class="podium-card podium-gold">
+                    {% if ranking|length >= 1 %}
+                        <span class="podium-medal">🥇</span>
+                        <p class="podium-rank">RANK 01</p>
+                        <h3>{{ ranking[0]["payer_name"] }}</h3>
+                        <strong>
+                            ¥{{ "{:,}".format(ranking[0]["total_amount"]) }}
+                        </strong>
+                        <small>{{ ranking[0]["pay_count"] }} COMMANDS</small>
+                    {% else %}
+                        <span class="podium-medal">🥇</span>
+                        <p class="podium-rank">RANK 01</p>
+                        <h3>NO DATA</h3>
+                        <strong>¥0</strong>
+                        <small>0 COMMANDS</small>
+                    {% endif %}
+                </article>
+
+
+                <!-- 3位 -->
+                <article class="podium-card podium-bronze">
+                    {% if ranking|length >= 3 %}
+                        <span class="podium-medal">🥉</span>
+                        <p class="podium-rank">RANK 03</p>
+                        <h3>{{ ranking[2]["payer_name"] }}</h3>
+                        <strong>
+                            ¥{{ "{:,}".format(ranking[2]["total_amount"]) }}
+                        </strong>
+                        <small>{{ ranking[2]["pay_count"] }} COMMANDS</small>
+                    {% else %}
+                        <span class="podium-medal">🥉</span>
+                        <p class="podium-rank">RANK 03</p>
+                        <h3>NO DATA</h3>
+                        <strong>¥0</strong>
+                        <small>0 COMMANDS</small>
+                    {% endif %}
+                </article>
+
+            </div>
+
+
+            <!-- 4位以下 -->
+            <div class="ranking-list-area">
+                <div class="ranking-list-heading">
+                    <span>RANK</span>
+                    <span>SUPPORTER</span>
+                    <span>COMMANDS</span>
+                    <span>TOTAL</span>
+                </div>
+
+                <ol class="supporter-list" start="4">
+                    {% for row in ranking[3:] %}
+                        <li>
+                            <span class="supporter-position">
+                                {{ loop.index + 3 }}
+                            </span>
+
+                            <span class="supporter-name">
+                                {{ row["payer_name"] }}
+                            </span>
+
+                            <span class="supporter-count">
+                                {{ row["pay_count"] }}
+                            </span>
+
+                            <strong class="supporter-total">
+                                ¥{{ "{:,}".format(row["total_amount"]) }}
+                            </strong>
+                        </li>
+                    {% else %}
+                        <li class="supporter-empty">
+                            <span>ランキングデータを待機しています</span>
+                        </li>
+                    {% endfor %}
+                </ol>
+            </div>
+
+        </section>
+
+
+        <!-- ==================================================
+             右側：システム統計
+             ================================================== -->
+        <aside class="ranking-stats-panel">
+
+            <div class="ranking-panel-header">
+                <div>
+                    <p class="ranking-panel-label">LIVE DATABASE</p>
+                    <h2>SYSTEM STATISTICS</h2>
+                </div>
+            </div>
+
+
+            <div class="ranking-stat-grid">
+
+                <article class="ranking-stat-card ranking-stat-main">
+                    <span>TOTAL DONATION</span>
+                    <strong>
+                        ¥{{ "{:,}".format(total_donation) }}
+                    </strong>
+                    <small>ALL-TIME SUPPORT</small>
+                </article>
+
+                <article class="ranking-stat-card ranking-stat-wide">
+                    <span>TODAY'S COMMANDS</span>
+                    <strong>{{ today_command_count }}</strong>
+                    <small>ROBOT OPERATIONS</small>
+                </article>
+
+                <article class="ranking-stat-card ranking-stat-wide">
+                    <span>ACTIVE USERS</span>
+                    <strong>{{ active_users }}</strong>
+                    <small>UNIQUE SUPPORTERS</small>
+                </article>
+
+            </div>
+
+
+            <!-- 最新の投げ銭 -->
+            <article class="latest-support-card">
+                <div class="latest-support-heading">
+                    <span>LATEST SUPPORT</span>
+                    <span class="latest-live">● LIVE</span>
+                </div>
+
+                {% if latest_support %}
+                    <h3>{{ latest_support["payer_name"] }}</h3>
+
+                    <p>
+                        <strong>
+                            +¥{{ "{:,}".format(latest_support["amount"]) }}
+                        </strong>
+                        <span>{{ latest_support["action_label"] }}</span>
+                    </p>
+
+                    <small>{{ latest_support["timestamp"] }}</small>
+                {% else %}
+                    <h3>WAITING...</h3>
+                    <p>
+                        <strong>+¥0</strong>
+                        <span>NO COMMAND</span>
+                    </p>
+                    <small>投げ銭データを待機しています</small>
+                {% endif %}
+            </article>
+
+        </aside>
+
+    </main>
+
+
+    <!-- 展示中に最新データへ自動更新 -->
+    <script>
+        setTimeout(function () {
+            window.location.reload();
+        }, 15000);
+    </script>
+
+</body>
+</html>

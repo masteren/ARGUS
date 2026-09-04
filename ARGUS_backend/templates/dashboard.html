@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>ARGUS 管理ダッシュボード</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<header>
+    <h1>ARGUS 管理ダッシュボード</h1>
+    <p>検出履歴・取引履歴・ロボット命令を確認します</p>
+</header>
+
+<main>
+
+    <section class="summary">
+        <div class="summary-card">
+            <h2>{{ total_sales }}円</h2>
+            <p>総売上</p>
+        </div>
+
+        <div class="summary-card">
+            <h2>{{ transaction_count }}件</h2>
+            <p>取引件数</p>
+        </div>
+
+        <div class="summary-card">
+            <h2>{{ pending_count }}件</h2>
+            <p>未実行コマンド</p>
+        </div>
+    </section>
+
+    <section class="card">
+        <h2>ロボット命令キュー</h2>
+
+        <table>
+            <tr>
+                <th>ID</th>
+                <th>アクション</th>
+                <th>発行元</th>
+                <th>状態</th>
+                <th>作成日時</th>
+            </tr>
+
+            {% for cmd in commands %}
+            <tr>
+                <td>{{ cmd.id }}</td>
+                <td>{{ cmd.action_label }}</td>
+                <td>{{ cmd.source }}</td>
+                <td>{{ cmd.status }}</td>
+                <td>{{ cmd.created_at }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+    </section>
+
+    <section class="card">
+        <h2>取引履歴</h2>
+
+        <table>
+            <tr>
+                <th>ID</th>
+                <th>日時</th>
+                <th>名前</th>
+                <th>金額</th>
+                <th>アクション</th>
+                <th>状態</th>
+            </tr>
+
+            {% for tx in transactions %}
+            <tr>
+                <td>{{ tx.id }}</td>
+                <td>{{ tx.timestamp }}</td>
+                <td>{{ tx.payer_name }}</td>
+                <td>{{ tx.amount }}円</td>
+                <td>{{ tx.action_label }}</td>
+                <td>{{ tx.status }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+    </section>
+
+    <section class="card">
+        <h2>AI検出履歴</h2>
+
+        <p>
+            <a href="/dummy/detection">ダミー検出を追加</a>
+        </p>
+
+        <table>
+            <tr>
+                <th>ID</th>
+                <th>日時</th>
+                <th>種類</th>
+                <th>信頼度</th>
+                <th>画像</th>
+            </tr>
+
+            {% for det in detections %}
+            <tr>
+                <td>{{ det.id }}</td>
+                <td>{{ det.timestamp }}</td>
+                <td>{{ det.type }}</td>
+                <td>{{ det.confidence }}</td>
+                <td>{{ det.image }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+    </section>
+
+</main>
+
+</body>
+</html>

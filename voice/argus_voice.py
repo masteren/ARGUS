@@ -50,7 +50,14 @@ def is_vision_question(text):
 # B から最新の検出結果を読み取り、一文にまとめて LLM の参考にする
 def get_detections():
     try:
-        events = requests.get(f"{B_URL}/events", timeout=3).json()
+        # ── 統合時の変更点 ──
+        # B の /events は {"ok": true, "events": [...]} を返す（偽サーバーは裸のリストだった）。
+        # どちらの形でも動くよう吸収する。
+        payload = requests.get(f"{B_URL}/events", timeout=3).json()
+        if isinstance(payload, dict):
+            events = payload.get("events", [])
+        else:
+            events = payload
         if not events:
             return "今は特に何も検出していません。"
         items = [f"{e['type']}(信頼度{e.get('confidence', '?')})" for e in events]

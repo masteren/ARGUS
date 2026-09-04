@@ -1,0 +1,1202 @@
+/* ==================================================
+   共通 / 管理画面 dashboard.html 用
+   ================================================== */
+
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #f2f4f8;
+    color: #222;
+}
+
+header {
+    background: #111827;
+    color: white;
+    padding: 24px;
+    text-align: center;
+}
+
+header h1 {
+    margin: 0;
+    font-size: 40px;
+}
+
+header p {
+    margin: 8px 0 0;
+}
+
+main {
+    width: 90%;
+    max-width: 1100px;
+    margin: 24px auto;
+}
+
+.card {
+    background: white;
+    padding: 24px;
+    margin-bottom: 24px;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.summary-card {
+    background: white;
+    padding: 24px;
+    border-radius: 12px;
+    text-align: center;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.summary-card h2 {
+    font-size: 32px;
+    margin: 0;
+    color: #2563eb;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 12px;
+}
+
+th,
+td {
+    border-bottom: 1px solid #ddd;
+    padding: 10px;
+    text-align: left;
+}
+
+th {
+    background: #f3f4f6;
+}
+
+
+/* ==================================================
+   public.html 用：ARGUS Live Control
+   ================================================== */
+
+html,
+body {
+    height: 100%;
+}
+
+body.public-page {
+    margin: 0;
+    min-height: 100vh;
+    overflow: hidden;
+    color: #e5e7eb;
+    font-family: "JetBrains Mono", Arial, sans-serif;
+
+    background:
+        linear-gradient(
+            rgba(3, 7, 18, 0.04),
+            rgba(3, 7, 18, 0.24)
+        ),
+        url("images/background01.jpg");
+
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+body.public-page::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+
+    background:
+        radial-gradient(
+            circle at center,
+            rgba(59, 130, 246, 0.02),
+            rgba(2, 6, 23, 0.02) 70%
+        );
+}
+
+.public-page .site-header,
+.public-page .layout {
+    position: relative;
+    z-index: 1;
+}
+
+
+/* ==================================================
+   ヘッダー
+   ================================================== */
+
+.public-page .site-header {
+    height: 72px;
+    padding: 0 24px;
+    background: rgba(2, 6, 23, 0.62);
+    border-bottom: 1px solid rgba(96, 165, 250, 0.35);
+
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-sizing: border-box;
+
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+.public-page .header-label {
+    margin: 0;
+    font-size: 12px;
+    color: #67e8f9;
+    letter-spacing: 2px;
+    text-shadow: 0 0 10px rgba(103, 232, 249, 0.35);
+}
+
+.public-page .site-header h1 {
+    margin: 4px 0 0;
+    font-size: 26px;
+    letter-spacing: 2px;
+}
+
+.public-page .header-status {
+    font-size: 13px;
+    color: #86efac;
+
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.public-page .status-dot {
+    width: 10px;
+    height: 10px;
+    background: #22c55e;
+    border-radius: 50%;
+    box-shadow: 0 0 12px #22c55e;
+}
+
+
+/* ==================================================
+   メインレイアウト
+   ================================================== */
+
+.public-page .layout {
+    width: 100%;
+    max-width: none;
+    height: calc(100vh - 72px);
+    margin: 0;
+    padding: 14px;
+    box-sizing: border-box;
+
+    display: grid;
+    grid-template-rows: minmax(0, 2.05fr) minmax(220px, 0.95fr);
+    gap: 14px;
+
+    overflow: hidden;
+}
+
+.public-page .hero {
+    min-height: 0;
+
+    display: grid;
+    grid-template-columns: 1fr 3fr;
+    gap: 14px;
+}
+
+
+/* ==================================================
+   共通パネル
+   ================================================== */
+
+.public-page .robot-card,
+.public-page .live-panel,
+.public-page .payment-panel {
+    background: rgba(12, 28, 52, 0.42);
+    border: 1px solid rgba(125, 211, 252, 0.34);
+    border-radius: 16px;
+    box-sizing: border-box;
+    overflow: hidden;
+
+    box-shadow:
+        0 0 28px rgba(56, 189, 248, 0.18),
+        inset 0 0 24px rgba(15, 23, 42, 0.25);
+
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+.public-page .panel-header {
+    height: 28px;
+    margin-bottom: 10px;
+
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    color: #67e8f9;
+    font-size: 12px;
+    letter-spacing: 1px;
+    text-shadow: 0 0 10px rgba(103, 232, 249, 0.35);
+}
+
+.public-page .online-dot {
+    color: #ef4444;
+}
+
+
+/* ==================================================
+   ロボットカード
+   ================================================== */
+
+.public-page .robot-card {
+    padding: 14px;
+
+    display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    min-height: 0;
+}
+
+.public-page .label {
+    margin: 0;
+    font-size: 11px;
+    color: #67e8f9;
+    letter-spacing: 1.5px;
+    text-shadow: 0 0 10px rgba(103, 232, 249, 0.35);
+}
+
+.public-page .robot-card h2 {
+    margin: 4px 0 8px;
+    font-size: 18px;
+}
+
+.public-page .robot-image {
+    min-height: 0;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    overflow: hidden;
+}
+
+.public-page .robot-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+}
+
+.public-page .status-list {
+    display: grid;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.public-page .status-list p {
+    margin: 0;
+    padding: 6px 8px;
+
+    border-radius: 8px;
+    background: rgba(2, 6, 23, 0.70);
+
+    display: flex;
+    justify-content: space-between;
+
+    font-size: 11px;
+}
+
+.public-page .status-list span {
+    color: #94a3b8;
+}
+
+.public-page .status-list strong {
+    color: #86efac;
+}
+
+
+/* ==================================================
+   ライブ映像パネル
+   ================================================== */
+
+.public-page .live-panel {
+    padding: 16px;
+
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.public-page .live-panel .panel-header {
+    height: 28px;
+    margin-bottom: 12px;
+
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    color: #67e8f9;
+    font-size: 12px;
+    letter-spacing: 1px;
+    text-shadow: 0 0 10px rgba(103, 232, 249, 0.35);
+
+    flex: 0 0 auto;
+}
+
+.public-page .live-screen {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+
+    background: #000;
+    border: 1px solid rgba(103, 232, 249, 0.45);
+    border-radius: 12px;
+    overflow: hidden;
+
+    box-shadow:
+        0 0 22px rgba(56, 189, 248, 0.22),
+        inset 0 0 24px rgba(0, 0, 0, 0.65);
+}
+
+.public-page .camera-feed {
+    position: absolute;
+    inset: 0;
+
+    width: 100%;
+    height: 100%;
+
+    object-fit: cover;
+    display: block;
+
+    background: #000;
+}
+
+/* カメラ未接続時のダミー表示用 */
+.public-page .camera-overlay {
+    width: 100%;
+    height: 100%;
+
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+
+    color: #67e8f9;
+    text-align: center;
+}
+
+.public-page .camera-title {
+    margin: 0;
+    font-size: 14px;
+    letter-spacing: 2px;
+}
+
+.public-page .scan-text {
+    margin: 12px 0;
+    font-size: 28px;
+    font-weight: bold;
+}
+
+.public-page .dummy-detection {
+    margin: 0;
+    font-size: 13px;
+    color: #94a3b8;
+}
+
+
+/* ==================================================
+   投げ銭操作パネル
+   ================================================== */
+
+.public-page .payment-panel {
+    position: relative;
+
+    padding: 16px;
+    min-height: 0;
+
+    display: grid;
+    grid-template-columns: 210px 320px 1fr;
+    gap: 14px;
+    align-items: center;
+}
+
+.public-page .section-title p {
+    margin: 0;
+    font-size: 11px;
+    color: #67e8f9;
+    letter-spacing: 1.5px;
+    text-shadow: 0 0 10px rgba(103, 232, 249, 0.35);
+}
+
+.public-page .section-title h2 {
+    margin: 4px 0 0;
+    font-size: 20px;
+}
+
+.public-page .form-area {
+    margin: 0;
+
+    display: grid;
+    gap: 8px;
+}
+
+.public-page .form-area input {
+    width: 100%;
+    height: 46px;
+    padding: 0 14px;
+    box-sizing: border-box;
+
+    background: rgba(2, 6, 23, 0.72);
+    color: #e5e7eb;
+
+    border: 1px solid rgba(148, 163, 184, 0.38);
+    border-radius: 10px;
+
+    font-size: 14px;
+}
+
+.public-page .action-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(110px, 1fr));
+    gap: 10px;
+}
+
+.public-page .action-button {
+    min-height: 64px;
+    padding: 8px 12px;
+
+    border: none;
+    border-radius: 12px;
+
+    background: linear-gradient(135deg, #1d4ed8, #2563eb, #06b6d4);
+    color: white;
+
+    cursor: pointer;
+    box-shadow:
+        0 0 16px rgba(6, 182, 212, 0.28),
+        inset 0 0 12px rgba(255, 255, 255, 0.08);
+}
+
+.public-page .action-button:hover {
+    transform: translateY(-2px);
+    filter: brightness(1.14);
+    box-shadow:
+        0 0 24px rgba(6, 182, 212, 0.45),
+        inset 0 0 14px rgba(255, 255, 255, 0.10);
+}
+
+.public-page .action-button .price {
+    display: block;
+    font-size: 12px;
+    opacity: 0.9;
+}
+
+.public-page .action-button strong {
+    display: block;
+    margin: 3px 0;
+    font-size: 20px;
+}
+
+.public-page .action-button small {
+    display: block;
+    font-size: 10px;
+    opacity: 0.85;
+}
+
+.public-page #result {
+    position: absolute;
+    left: 18px;
+    bottom: 6px;
+
+    margin: 0;
+
+    color: #facc15;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+/* ==================================================
+   ranking.html 用：ARGUS Supporter Ranking
+   ================================================== */
+
+/* --------------------------------------------------
+   背景・共通設定
+   -------------------------------------------------- */
+
+.ranking-page,
+.ranking-page * {
+    box-sizing: border-box;
+}
+
+body.ranking-page {
+    margin: 0;
+    min-height: 100vh;
+    overflow: hidden;
+    color: #e5e7eb;
+    font-family: "JetBrains Mono", Arial, sans-serif;
+
+    background:
+        linear-gradient(
+            rgba(3, 7, 18, 0.20),
+            rgba(3, 7, 18, 0.48)
+        ),
+        url("images/background02.jpg");
+
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+body.ranking-page::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+
+    background:
+        radial-gradient(
+            circle at 30% 20%,
+            rgba(37, 99, 235, 0.14),
+            transparent 42%
+        ),
+        radial-gradient(
+            circle at 80% 75%,
+            rgba(6, 182, 212, 0.10),
+            transparent 38%
+        );
+}
+
+.ranking-page .ranking-header,
+.ranking-page .ranking-layout {
+    position: relative;
+    z-index: 1;
+}
+
+
+/* --------------------------------------------------
+   ヘッダー
+   -------------------------------------------------- */
+
+.ranking-page .ranking-header {
+    width: 100%;
+    height: 78px;
+    padding: 0 28px;
+
+    background: rgba(2, 6, 23, 0.70);
+    border-bottom: 1px solid rgba(103, 232, 249, 0.32);
+
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    text-align: left;
+
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+
+.ranking-page .ranking-header-label {
+    margin: 0;
+    color: #67e8f9;
+    font-size: 11px;
+    letter-spacing: 2.5px;
+    text-shadow: 0 0 10px rgba(103, 232, 249, 0.34);
+}
+
+.ranking-page .ranking-header h1 {
+    margin: 4px 0 0;
+    color: #f8fafc;
+    font-size: clamp(21px, 2.1vw, 30px);
+    letter-spacing: 2px;
+}
+
+.ranking-page .ranking-header-status {
+    color: #86efac;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1px;
+
+    display: flex;
+    align-items: center;
+    gap: 9px;
+}
+
+.ranking-page .ranking-status-dot {
+    width: 10px;
+    height: 10px;
+    background: #22c55e;
+    border-radius: 50%;
+
+    box-shadow:
+        0 0 10px #22c55e,
+        0 0 18px rgba(34, 197, 94, 0.65);
+
+    animation: ranking-status-pulse 1.8s infinite;
+}
+
+
+/* --------------------------------------------------
+   メインレイアウト
+   -------------------------------------------------- */
+
+.ranking-page .ranking-layout {
+    width: 100%;
+    max-width: none;
+    height: calc(100vh - 78px);
+    margin: 0;
+    padding: 16px;
+
+    display: grid;
+    grid-template-columns: minmax(0, 1.55fr) minmax(300px, 0.72fr);
+    gap: 16px;
+
+    overflow: hidden;
+}
+
+.ranking-page .supporter-panel,
+.ranking-page .ranking-stats-panel {
+    min-width: 0;
+    min-height: 0;
+    padding: 18px;
+
+    background: rgba(18, 42, 72, 0.50);
+    border: 1px solid rgba(125, 211, 252, 0.48);
+    border-radius: 8px;
+
+    box-shadow:
+        0 0 34px rgba(56, 189, 248, 0.28),
+        inset 0 0 26px rgba(6, 182, 212, 0.10);
+
+    backdrop-filter: blur(11px);
+    -webkit-backdrop-filter: blur(11px);
+}
+
+.ranking-page .supporter-panel {
+    display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr);
+    gap: 14px;
+}
+
+.ranking-page .ranking-stats-panel {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) 190px;
+    gap: 12px;
+
+    overflow: hidden;
+}
+
+
+/* --------------------------------------------------
+   パネル見出し
+   -------------------------------------------------- */
+
+.ranking-page .ranking-panel-header {
+    min-height: 44px;
+
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.ranking-page .ranking-panel-label {
+    margin: 0;
+    color: #67e8f9;
+    font-size: 10px;
+    letter-spacing: 2px;
+}
+
+.ranking-page .ranking-panel-header h2 {
+    margin: 4px 0 0;
+    color: #f8fafc;
+    font-size: 18px;
+    letter-spacing: 1.5px;
+}
+
+.ranking-page .ranking-sync {
+    padding: 6px 9px;
+    color: #67e8f9;
+    background: rgba(8, 47, 73, 0.56);
+    border: 1px solid rgba(103, 232, 249, 0.28);
+    border-radius: 999px;
+    font-size: 9px;
+    letter-spacing: 1px;
+}
+
+
+/* --------------------------------------------------
+   1位～3位
+   -------------------------------------------------- */
+
+.ranking-page .podium-grid {
+    min-height: 164px;
+
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 11px;
+    align-items: end;
+}
+
+.ranking-page .podium-card {
+    min-width: 0;
+    min-height: 144px;
+    padding: 13px 10px;
+
+    background:
+        linear-gradient(
+            160deg,
+            rgba(15, 45, 76, 0.76),
+            rgba(2, 6, 23, 0.72)
+        );
+
+    border: 1px solid rgba(125, 211, 252, 0.24);
+    border-radius: 13px;
+
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+
+    text-align: center;
+
+    box-shadow:
+        inset 0 0 18px rgba(56, 189, 248, 0.08),
+        0 8px 24px rgba(2, 6, 23, 0.24);
+}
+
+.ranking-page .podium-gold {
+    min-height: 164px;
+    border-color: rgba(250, 204, 21, 0.52);
+
+    box-shadow:
+        0 0 24px rgba(250, 204, 21, 0.15),
+        inset 0 0 20px rgba(250, 204, 21, 0.06);
+}
+
+.ranking-page .podium-silver {
+    border-color: rgba(226, 232, 240, 0.34);
+}
+
+.ranking-page .podium-bronze {
+    border-color: rgba(251, 146, 60, 0.40);
+}
+
+.ranking-page .podium-medal {
+    font-size: 29px;
+    line-height: 1;
+}
+
+.ranking-page .podium-rank {
+    margin: 7px 0 2px;
+    color: #94a3b8;
+    font-size: 9px;
+    letter-spacing: 1.5px;
+}
+
+.ranking-page .podium-card h3 {
+    width: 100%;
+    margin: 2px 0 5px;
+    overflow: hidden;
+    color: #f8fafc;
+    font-size: clamp(13px, 1.3vw, 18px);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ranking-page .podium-card strong {
+    color: #67e8f9;
+    font-size: clamp(17px, 1.8vw, 24px);
+    text-shadow: 0 0 12px rgba(103, 232, 249, 0.30);
+}
+
+.ranking-page .podium-gold strong {
+    color: #fde047;
+    text-shadow: 0 0 14px rgba(250, 204, 21, 0.34);
+}
+
+.ranking-page .podium-card small {
+    margin-top: 5px;
+    color: #94a3b8;
+    font-size: 8px;
+    letter-spacing: 1px;
+}
+
+
+/* --------------------------------------------------
+   4位以下
+   -------------------------------------------------- */
+
+.ranking-page .ranking-list-area {
+    min-height: 0;
+    overflow: hidden;
+
+    background: rgba(2, 6, 23, 0.50);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 12px;
+}
+
+.ranking-page .ranking-list-heading {
+    min-height: 30px;
+    padding: 0 13px;
+
+    color: #64748b;
+    background: rgba(15, 23, 42, 0.70);
+    border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+
+    display: grid;
+    grid-template-columns: 55px minmax(0, 1fr) 86px 120px;
+    align-items: center;
+    gap: 9px;
+
+    font-size: 8px;
+    letter-spacing: 1.3px;
+}
+
+.ranking-page .ranking-list-heading span:nth-child(3),
+.ranking-page .ranking-list-heading span:nth-child(4) {
+    text-align: right;
+}
+
+.ranking-page .supporter-list {
+    height: calc(100% - 30px);
+    margin: 0;
+    padding: 0;
+
+    list-style: none;
+    overflow-y: auto;
+}
+
+.ranking-page .supporter-list li {
+    min-height: 42px;
+    padding: 0 13px;
+
+    border-bottom: 1px solid rgba(148, 163, 184, 0.10);
+
+    display: grid;
+    grid-template-columns: 55px minmax(0, 1fr) 86px 120px;
+    align-items: center;
+    gap: 9px;
+}
+
+.ranking-page .supporter-list li:last-child {
+    border-bottom: none;
+}
+
+.ranking-page .supporter-position {
+    color: #67e8f9;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.ranking-page .supporter-name {
+    overflow: hidden;
+    color: #e2e8f0;
+    font-size: 13px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ranking-page .supporter-count {
+    color: #94a3b8;
+    font-size: 11px;
+    text-align: right;
+}
+
+.ranking-page .supporter-total {
+    color: #f8fafc;
+    font-size: 14px;
+    text-align: right;
+}
+
+.ranking-page .supporter-empty {
+    grid-template-columns: 1fr !important;
+    place-items: center;
+    color: #64748b;
+    font-size: 12px;
+}
+
+
+/* --------------------------------------------------
+   統計カード
+   -------------------------------------------------- */
+
+.ranking-page .ranking-stat-grid {
+    min-height: 0;
+
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows:
+        minmax(0, 1.25fr)
+        minmax(0, 0.75fr);
+    gap: 10px;
+}
+
+.ranking-page .ranking-stat-card {
+    min-height: 0px;
+    padding: 14px;
+
+    background:
+        linear-gradient(
+            150deg,
+            rgba(8, 47, 73, 0.62),
+            rgba(2, 6, 23, 0.68)
+        );
+
+    border: 1px solid rgba(103, 232, 249, 0.20);
+    border-radius: 12px;
+
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+
+    box-shadow: inset 0 0 16px rgba(56, 189, 248, 0.06);
+}
+
+/* TOTAL DONATION */
+.ranking-page .ranking-stat-grid .ranking-stat-card:nth-child(1) {
+    grid-column: 1 / -1;
+    grid-row: 1;
+}
+
+/* TODAY'S COMMANDS */
+.ranking-page .ranking-stat-grid .ranking-stat-card:nth-child(2) {
+    grid-column: 1;
+    grid-row: 2;
+}
+
+/* ACTIVE USERS */
+.ranking-page .ranking-stat-grid .ranking-stat-card:nth-child(3) {
+    grid-column: 2;
+    grid-row: 2;
+}
+
+/* ROBOT STATUS */
+.ranking-page .ranking-stat-grid .ranking-stat-card:nth-child(4) {
+    grid-column: 1 / -1;
+    grid-row: 3;
+}
+
+.ranking-page .ranking-stat-card span {
+    color: #67e8f9;
+    font-size: 9px;
+    letter-spacing: 1.4px;
+}
+
+.ranking-page .ranking-stat-card strong {
+    margin: 7px 0 4px;
+    color: #f8fafc;
+    font-size: clamp(24px, 3vw, 40px);
+}
+
+.ranking-page .ranking-stat-main strong {
+    color: #67e8f9;
+    font-size: clamp(32px, 4vw, 52px);
+    text-shadow: 0 0 16px rgba(103, 232, 249, 0.28);
+}
+
+.ranking-page .ranking-stat-card:not(.ranking-stat-main) strong {
+    font-size: clamp(30px, 3.2vw, 44px);
+}
+
+.ranking-page .ranking-stat-card small {
+    color: #64748b;
+    font-size: 8px;
+    letter-spacing: 1px;
+}
+
+.ranking-page .ranking-stat-card .ranking-online {
+    color: #86efac;
+    font-size: clamp(19px, 2vw, 28px);
+
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.ranking-page .ranking-online i {
+    width: 9px;
+    height: 9px;
+    background: #22c55e;
+    border-radius: 50%;
+    box-shadow: 0 0 10px #22c55e;
+}
+
+
+/* --------------------------------------------------
+   最新投げ銭
+   -------------------------------------------------- */
+.ranking-page .latest-support-card {
+    width: 100%;
+    height: 190px;
+    min-height: 0;
+    padding: 13px 15px;
+    overflow: hidden;
+
+    background:
+        linear-gradient(
+            145deg,
+            rgba(29, 78, 216, 0.28),
+            rgba(6, 182, 212, 0.12),
+            rgba(2, 6, 23, 0.68)
+        );
+
+    border: 1px solid rgba(96, 165, 250, 0.28);
+    border-radius: 12px;
+
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+
+    box-shadow:
+        0 0 20px rgba(37, 99, 235, 0.10),
+        inset 0 0 16px rgba(103, 232, 249, 0.05);
+}
+
+.ranking-page .latest-support-heading {
+    display: flex;
+    justify-content: space-between;
+    color: #67e8f9;
+    font-size: 9px;
+    letter-spacing: 1.5px;
+}
+
+.ranking-page .latest-live {
+    color: #f87171;
+}
+
+.ranking-page .latest-support-card h3 {
+    margin: 11px 0 7px;
+    overflow: hidden;
+    color: #f8fafc;
+    font-size: 20px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ranking-page .latest-support-card p {
+    margin: 0;
+
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.ranking-page .latest-support-card p strong {
+    color: #86efac;
+    font-size: 22px;
+}
+
+.ranking-page .latest-support-card p span {
+    overflow: hidden;
+    color: #cbd5e1;
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ranking-page .latest-support-card > small {
+    margin-top: 7px;
+    color: #64748b;
+    font-size: 8px;
+}
+
+
+/* --------------------------------------------------
+   アニメーション
+   -------------------------------------------------- */
+
+@keyframes ranking-status-pulse {
+    0%,
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+
+    50% {
+        opacity: 0.55;
+        transform: scale(0.78);
+    }
+}
+
+
+/* --------------------------------------------------
+   小さい画面への対応
+   -------------------------------------------------- */
+
+@media (max-width: 900px) {
+    body.ranking-page {
+        overflow: auto;
+    }
+
+    .ranking-page .ranking-header {
+        height: auto;
+        min-height: 78px;
+        padding: 14px 18px;
+        gap: 14px;
+    }
+
+    .ranking-page .ranking-header h1 {
+        font-size: 19px;
+    }
+
+    .ranking-page .ranking-header-status {
+        font-size: 10px;
+    }
+
+    .ranking-page .ranking-layout {
+        height: auto;
+        min-height: calc(100vh - 78px);
+        grid-template-columns: 1fr;
+        overflow: visible;
+    }
+
+    .ranking-page .ranking-list-area {
+        min-height: 220px;
+    }
+}
+
+@media (max-width: 600px) {
+    .ranking-page .ranking-header-status {
+        display: none;
+    }
+
+    .ranking-page .ranking-layout {
+        padding: 10px;
+    }
+
+    .ranking-page .supporter-panel,
+    .ranking-page .ranking-stats-panel {
+        padding: 12px;
+    }
+
+    .ranking-page .podium-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .ranking-page .podium-card,
+    .ranking-page .podium-gold {
+        min-height: 130px;
+    }
+
+    .ranking-page .ranking-list-heading,
+    .ranking-page .supporter-list li {
+        grid-template-columns: 42px minmax(0, 1fr) 86px;
+    }
+
+    .ranking-page .ranking-list-heading span:nth-child(3),
+    .ranking-page .supporter-count {
+        display: none;
+    }
+
+    .ranking-page .ranking-stat-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .ranking-page .ranking-stat-main {
+        grid-column: auto;
+    }
+}

@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>ARGUS Live Control</title>
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+
+    <!-- サイバー系フォント -->
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body class="public-page">
+
+<header class="site-header">
+    <div>
+        <p class="header-label">AI SURVEILLANCE ROBOT</p>
+        <h1>ARGUS LIVE CONTROL</h1>
+    </div>
+
+    <div class="header-status">
+        <span class="status-dot"></span>
+        SYSTEM ONLINE
+    </div>
+</header>
+
+<main class="layout">
+
+    <!-- 上段：左にロボット画像、右にライブ映像 -->
+    <section class="hero">
+
+        <!-- ロボット紹介カード -->
+        <div class="robot-card">
+            <p class="label">ARGUS UNIT-01</p>
+            <h2>6-Legged AI Robot</h2>
+
+            <div class="robot-image">
+                <img src="{{ url_for('static', filename='images/robot.png') }}" alt="ARGUS Robot">
+            </div>
+
+            <div class="status-list">
+                <p>
+                    <span>STATUS</span>
+                    <strong>ONLINE</strong>
+                </p>
+                <p>
+                    <span>CONTROL</span>
+                    <strong>DONATION</strong>
+                </p>
+                <p>
+                    <span>NETWORK</span>
+                    <strong>LAN READY</strong>
+                </p>
+            </div>
+        </div>
+
+        <!-- ライブ映像パネル -->
+        <div class="live-panel">
+            <div class="panel-header">
+                <span>LIVE CAMERA</span>
+                <span class="online-dot">● REC</span>
+            </div>
+
+            <div class="live-screen">
+                <img src="{{ url_for('video_feed') }}" alt="ロボット視点映像" class="camera-feed">
+            </div>
+        </div>
+
+    </section>
+
+    <!-- 投げ銭UI -->
+    <section class="payment-panel">
+        <div class="section-title">
+            <p>TIP TO CONTROL</p>
+            <h2>投げ銭でARGUSを操作</h2>
+        </div>
+
+        <div class="form-area">
+            <input type="text" id="payer_name" placeholder="名前を入力">
+        </div>
+
+        <div class="action-grid">
+            {% for action_code, action in actions.items() %}
+            <button class="action-button" onclick="pay('{{ action_code }}')">
+                <span class="price">{{ action.amount }}円</span>
+                <strong>{{ action.label }}</strong>
+                <small>{{ action.description }}</small>
+            </button>
+            {% endfor %}
+        </div>
+
+        <p id="result"></p>
+    </section>
+
+
+
+</main>
+
+<script>
+function pay(action) {
+    const payerName = document.getElementById("payer_name").value;
+    const result = document.getElementById("result");
+
+    result.textContent = "PROCESSING PAYMENT...";
+
+    fetch("/pay", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+            payer_name: payerName,
+            message: "",
+            action: action
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.ok) {
+            result.textContent =
+                data.payer_name + "さんが " +
+                data.amount + "円で「" +
+                data.action_label + "」を実行しました。";
+
+            setTimeout(() => {
+                location.reload();
+            }, 1000);
+        } else {
+            result.textContent = "ERROR: " + data.error;
+        }
+    })
+    .catch(error => {
+        result.textContent = "通信エラーが発生しました";
+        console.error(error);
+    });
+}
+</script>
+
+</body>
+</html>
