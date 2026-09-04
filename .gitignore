@@ -1,5 +1,6 @@
 *.wav
 __pycache__/
+.DS_Store
 
 ARGUS_backend/argus.db
 ARGUS_backend/argus.smoketest.db
