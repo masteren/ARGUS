@@ -2,7 +2,7 @@
 
 6脚ロボット（Freenove ＋ Raspberry Pi 5）を、観客が**体験チケット（模擬通貨）**で操作できる
 展示作品。画像認識（A）・バックエンド＋Web（B）・音声＋実機ブリッジ（C）の3モジュールを、
-**B の実装を契約の正本**として結線してある。要件は [要件定義書_ARGUS_Ver1.0.md](要件定義書_ARGUS_Ver1.0.md)、
+**B の実装を契約の正本**として結線してある。要件は [docs/要件定義書_ARGUS_Ver1.0.md](docs/要件定義書_ARGUS_Ver1.0.md)、
 インターフェースは [CONTRACT.md](CONTRACT.md) が正本。
 
 ## 構成
@@ -18,7 +18,10 @@ voice/                担当C：音声＋歩行ブリッジ＋統合
   argus_voice.py        ← 修正：/events を {"events":[...]} で解析
   paid_poller.py        ← 修正：port 5000、/commands を {"commands":[...]} で解析
   robot_bridge.py       ← 強化：wave/bow/search_person をFreenove照合済み命令で実装
+tools/                結合スモークテスト
+docs/                 設計・企画ドキュメント（→ docs/README.md）
 CONTRACT.md           正本の契約表＋残タスク（必読）
+requirements.txt      依存パッケージ
 ```
 
 ## 私（Claude）が決め打ちした箇所（review して翻せる）
