@@ -24,13 +24,20 @@ CONTRACT.md           正本の契約表＋残タスク（必読）
 requirements.txt      依存パッケージ
 ```
 
-## 私（Claude）が決め打ちした箇所（review して翻せる）
+## 統合時の決め打ち（review して翻せる）
 
-1. **契約の正本 = B**。A と C を B に合わせた。
-2. **決策1**：`wave` は保留し、体を振るジェスチャで実装。`search_person` は巡回モーションだけ実装し、成功判定は CONTRACT.md ①で TODO。
-3. **決策2 = 選択1**：カメラは **B のみが開く**。A は `vision/detection_webcam.py` の `CAMERA_SOURCE = B_URL + "/video_feed"` でBから取得。ローカル単体テストは `CAMERA_SOURCE = 0` に戻す。
+3モジュールを繋ぐ際、どちらでも成立する分かれ道を以下のように決めた。
+不都合があれば翻してよい。翻すときは CONTRACT.md も一緒に直すこと。
 
-翻したいとき：決策2を選択2にするなら A を `VideoCapture(0)` に戻し B の `/video_feed` を止めて A が描画付きで serve する。
+1. **契約の正本 = B**。実装がいちばん完全だったので B の形を基準にし、A と C を合わせた。
+2. **`wave` / `bow` はジェスチャで代用**。Freenove 公式に専用命令が無いため、
+   `CMD_ATTITUDE` の組み合わせで作っている（`voice/robot_bridge.py`）。
+3. **カメラは B だけが開く**。A は `vision/detection_webcam.py` の
+   `CAMERA_SOURCE = B_URL + "/video_feed"` で B の配信を読む。1つのカメラを2プロセスで
+   奪い合わないための選択。**翻すなら**：A を `VideoCapture(0)` に戻し、B の `/video_feed`
+   を止めて A が描画付きで serve する。A をローカル単体で試すだけなら `CAMERA_SOURCE = 0`。
+4. **`search_person` の起動トリガは `/mission/active`**。`/commands` は C が数秒で `done` に
+   するので A が取り逃がす。ミッションは成功するまで active のままなので、そちらを見る。
 
 ## まず通っているか確認する（1コマンド・依存なし）
 
@@ -97,6 +104,15 @@ ipconfig getifaddr en0        # 例: 192.168.0.2
 - IP は DHCP で変わる。QRコードを作るなら当日に作り直すか、ルーターで固定する。
 - `/video_feed` は MJPEG。同時視聴が増えるほどフレームレートが落ちるので、
   多数のスマホから同時に開かせる運用は事前に負荷を試すこと。
+
+## チーム
+
+| 担当 | 役割 | 主なファイル |
+| --- | --- | --- |
+| [@masteren](https://github.com/masteren)（任） | C：音声対話・実機ブリッジ・統合／リーダー | `voice/` |
+| [@tsukky227](https://github.com/tsukky227) | B：バックエンド・Web・取引処理 | `ARGUS_backend/` |
+| [@Hochadamas](https://github.com/Hochadamas)（ベン） | A：画像認識 | `vision/` |
+| 担当D | 観客体験・展示物・テスト | `docs/roles/ARGUS_PersonD_AudienceExperience.md` |
 
 ## ブランチ運用
 
