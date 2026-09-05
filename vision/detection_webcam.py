@@ -2,6 +2,7 @@ from ultralytics import YOLO
 import cv2
 import time
 import os
+import threading
 import requests
 import base64
 from datetime import datetime
@@ -22,6 +23,39 @@ UPLOAD_URL = f"{B_URL}/upload"                 # 【CORRIGÉ】était /detection
 # A tire les frames depuis le flux de B → plus de conflit sur /dev/video0.
 # Pour tester en local sans B, remettre CAMERA_SOURCE = 0 (webcam directe).
 CAMERA_SOURCE = f"{B_URL}/video_feed"          # option 1 ; mettre 0 pour une webcam locale
+
+# ── Déclencheur de mission « search_person » (CONTRACT.md ①) ───────────────
+# Quand un spectateur paie search_person, B crée une mission `active`.
+# A surveille `GET /mission/active` (et non /commands : C consomme la commande et
+# la passe à `done` en quelques secondes, la fenêtre serait trop courte pour A).
+# Tant que la mission est active, la première personne détectée est envoyée avec
+# type="mission_person" → B bascule la mission en `success`.
+MISSION_URL           = f"{B_URL}/mission/active"
+MISSION_POLL_INTERVAL = 2.0
+MISSION_TYPE          = "mission_person"
+
+mission_active   = False    # écrit par le thread de veille, lu par la boucle vidéo
+mission_reported = False    # évite de spammer B une fois la mission remplie
+
+
+def surveiller_mission():
+    """Thread de fond : tient `mission_active` à jour depuis B."""
+    global mission_active, mission_reported
+    while True:
+        try:
+            payload = requests.get(MISSION_URL, timeout=3).json()
+            actif = bool(payload.get("active"))
+            if actif and not mission_active:
+                print("[MISSION] search_person payé → détection de mission ARMÉE", flush=True)
+                mission_reported = False
+            elif mission_active and not actif:
+                print("[MISSION] mission terminée → retour au mode normal", flush=True)
+            mission_active = actif
+        except Exception as e:
+            # B indisponible : on garde l'état précédent et on réessaie
+            print(f"[MISSION] backend injoignable : {e}", flush=True)
+        time.sleep(MISSION_POLL_INTERVAL)
+
 
 # Anti-spam / throttle des POST
 SEUIL_INITIAL   = 0.40
@@ -95,6 +129,9 @@ def prendre_screenshot(frame, sim):
         mode = "normal"
 
 
+# Veille des missions payées, en tâche de fond (daemon : s'arrête avec le script)
+threading.Thread(target=surveiller_mission, daemon=True).start()
+
 cap = cv2.VideoCapture(CAMERA_SOURCE)
 fps_t = time.time()
 print(f"Flux démarré depuis {CAMERA_SOURCE} — Ctrl+C pour quitter", flush=True)
@@ -117,13 +154,20 @@ try:
                 nom_classe = model.names[int(box.cls[0])]
                 conf = float(box.conf[0])
                 if nom_classe in CLASSES_POST and conf >= CONF_MIN_POST:
-                    if now - dernier_post >= POST_INTERVAL:
+                    if mission_active and not mission_reported:
+                        # Mission payée en cours : on remonte tout de suite, sans
+                        # throttle, avec le préfixe qui déclenche `success` chez B.
+                        envoyer_detection(frame, MISSION_TYPE, conf, bbox=box.xyxy[0].tolist())
+                        mission_reported = True
+                        dernier_post = now
+                    elif now - dernier_post >= POST_INTERVAL:
                         envoyer_detection(frame, nom_classe, conf, bbox=box.xyxy[0].tolist())
                         dernier_post = now
                     break
 
             if now - dernier_log_fps >= 10:
-                print(f"FPS: {fps:.1f} | MODE: NORMAL", flush=True)
+                etat = "MISSION" if mission_active else "NORMAL"
+                print(f"FPS: {fps:.1f} | MODE: {etat}", flush=True)
                 dernier_log_fps = now
 
         elif mode == "recherche":

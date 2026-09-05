@@ -41,13 +41,13 @@
     <main class="ranking-layout">
 
         <!-- ==================================================
-             左側：投げ銭ランキング
+             左側：チケットランキング
              ================================================== -->
         <section class="supporter-panel">
 
             <div class="ranking-panel-header">
                 <div>
-                    <p class="ranking-panel-label">DONATION DATABASE</p>
+                    <p class="ranking-panel-label">TICKET DATABASE</p>
                     <h2>TOP SUPPORTERS</h2>
                 </div>
 
@@ -65,14 +65,14 @@
                         <p class="podium-rank">RANK 02</p>
                         <h3>{{ ranking[1]["payer_name"] }}</h3>
                         <strong>
-                            ¥{{ "{:,}".format(ranking[1]["total_amount"]) }}
+                            {{ "{:,}".format(ranking[1]["total_amount"]) }} TKT
                         </strong>
                         <small>{{ ranking[1]["pay_count"] }} COMMANDS</small>
                     {% else %}
                         <span class="podium-medal">🥈</span>
                         <p class="podium-rank">RANK 02</p>
                         <h3>NO DATA</h3>
-                        <strong>¥0</strong>
+                        <strong>0 TKT</strong>
                         <small>0 COMMANDS</small>
                     {% endif %}
                 </article>
@@ -85,14 +85,14 @@
                         <p class="podium-rank">RANK 01</p>
                         <h3>{{ ranking[0]["payer_name"] }}</h3>
                         <strong>
-                            ¥{{ "{:,}".format(ranking[0]["total_amount"]) }}
+                            {{ "{:,}".format(ranking[0]["total_amount"]) }} TKT
                         </strong>
                         <small>{{ ranking[0]["pay_count"] }} COMMANDS</small>
                     {% else %}
                         <span class="podium-medal">🥇</span>
                         <p class="podium-rank">RANK 01</p>
                         <h3>NO DATA</h3>
-                        <strong>¥0</strong>
+                        <strong>0 TKT</strong>
                         <small>0 COMMANDS</small>
                     {% endif %}
                 </article>
@@ -105,14 +105,14 @@
                         <p class="podium-rank">RANK 03</p>
                         <h3>{{ ranking[2]["payer_name"] }}</h3>
                         <strong>
-                            ¥{{ "{:,}".format(ranking[2]["total_amount"]) }}
+                            {{ "{:,}".format(ranking[2]["total_amount"]) }} TKT
                         </strong>
                         <small>{{ ranking[2]["pay_count"] }} COMMANDS</small>
                     {% else %}
                         <span class="podium-medal">🥉</span>
                         <p class="podium-rank">RANK 03</p>
                         <h3>NO DATA</h3>
-                        <strong>¥0</strong>
+                        <strong>0 TKT</strong>
                         <small>0 COMMANDS</small>
                     {% endif %}
                 </article>
@@ -145,7 +145,7 @@
                             </span>
 
                             <strong class="supporter-total">
-                                ¥{{ "{:,}".format(row["total_amount"]) }}
+                                {{ "{:,}".format(row["total_amount"]) }} TKT
                             </strong>
                         </li>
                     {% else %}
@@ -175,9 +175,9 @@
             <div class="ranking-stat-grid">
 
                 <article class="ranking-stat-card ranking-stat-main">
-                    <span>TOTAL DONATION</span>
+                    <span>TOTAL TICKETS</span>
                     <strong>
-                        ¥{{ "{:,}".format(total_donation) }}
+                        {{ "{:,}".format(total_donation) }} TKT
                     </strong>
                     <small>ALL-TIME SUPPORT</small>
                 </article>
@@ -197,7 +197,7 @@
             </div>
 
 
-            <!-- 最新の投げ銭 -->
+            <!-- 最新のチケット消費 -->
             <article class="latest-support-card">
                 <div class="latest-support-heading">
                     <span>LATEST SUPPORT</span>
@@ -209,7 +209,7 @@
 
                     <p>
                         <strong>
-                            +¥{{ "{:,}".format(latest_support["amount"]) }}
+                            +{{ "{:,}".format(latest_support["amount"]) }} TKT
                         </strong>
                         <span>{{ latest_support["action_label"] }}</span>
                     </p>
@@ -218,10 +218,10 @@
                 {% else %}
                     <h3>WAITING...</h3>
                     <p>
-                        <strong>+¥0</strong>
+                        <strong>+0 TKT</strong>
                         <span>NO COMMAND</span>
                     </p>
-                    <small>投げ銭データを待機しています</small>
+                    <small>チケットデータを待機しています</small>
                 {% endif %}
             </article>
 

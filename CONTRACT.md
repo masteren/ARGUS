@@ -10,7 +10,7 @@
 |---|---|---|---|---|
 | POST | `/upload` | A → B | `{timestamp, type, confidence, image}` (+任意 `bbox`,`frame_wh`) | `{"ok":true, "detection_id":N, "mission_success":bool, "mission_id":N\|null}` |
 | GET  | `/events` | C, ダッシュボード | — | `{"ok":true, "events":[...]}` |
-| POST | `/pay` | 観客Web → B | `{amount, action, payer_name}` | `{"ok":true, ...}` |
+| POST | `/pay` | 観客Web → B | `{action, payer_name, message}` | `{"ok":true, ...}` / 未定義 action・長すぎる入力は **400** / 連打・キュー飽和は **429** |
 | GET  | `/commands` | C → B | — | `{"ok":true, "commands":[...]}` |
 | POST | `/commands/{id}/done` | C → B | — | `{"ok":true}` |
 | GET  | `/ranking`, `/api/ranking` | 公開ページ | — | ランキング |
@@ -19,6 +19,15 @@
 | GET  | `/mission/latest` | 公開ページ | — | `{"ok":true, "mission":{...}\|null, "status":"active"\|"success"\|null}` |
 | GET  | `/overlay` | 公開ページ | — | `{"ok":true, "bbox":[x1,y1,x2,y2]\|null, "frame_wh":[w,h]\|null, "type", "confidence", "age_sec"}` |
 | GET  | `/health` | 全員 | — | `{"ok":true}` |
+
+### 環境変数
+
+| 変数 | 既定 | 用途 |
+|---|---|---|
+| `PORT` | `5000` | B・A・C が同じ変数を読む。macOS の結合試験だけ `5001` に逃がす |
+| `ARGUS_DB` | `ARGUS_backend/argus.db` | 使い捨てDBを指せる（スモークテスト用） |
+| `ARGUS_DEBUG` | `0`（OFF） | 開発中だけ `1`。**展示では必ず OFF**（同一LANにデバッガを晒さない） |
+| `ARGUS_PAY_MIN_INTERVAL` | `1.5` | 同一IPからの `/pay` の最短間隔（秒）。連打対策 |
 
 ### ポート（契約は 5000 のまま。環境変数で逃がせるだけ）
 
@@ -55,8 +64,10 @@ B は `ARGUS_DB` で使い捨てDBも指定できる（未設定なら `ARGUS_ba
   `type` が `mission_` で始まる `/upload` を受けたら、最新の active ミッションを `success` にして
   `/upload` のレスポンスに `mission_success:true` を返す。状態は `/mission/active`・`/mission/latest`。
 - **C（実装済み）**：巡回モーション ＋ 完了を `/commands/{id}/done`。
-- **A（TODO）**：`GET /commands` に `search_person` があればカメラ検出を開始し、人物を検出したら
-  `type="mission_person"` で `/upload`。← いまは A 側のこの起動トリガだけが未接続。
+- **A（実装済み）**：`GET /mission/active` を2秒間隔で監視し、active の間に人物を検出したら
+  `type="mission_person"` で即 `/upload`（throttle をかけない・1ミッション1回だけ）。
+  **`/commands` ではなく `/mission/active` を見る**：C が数秒でコマンドを `done` にするため、
+  `/commands` を見ていると A が起動トリガを取り逃がす。ミッションは成功するまで active のまま。
 - **公開ページ（TODO）**：`/mission/latest` を見て成功演出＋課金者へ通知。
 
 データ閉ループ（A の起動トリガを除く）は `bash tools/smoketest.sh` で回帰確認できる。
@@ -66,7 +77,9 @@ A は検出のたびに `bbox`,`frame_wh` を `/upload` に含める（実装済
 - **B（実装済み）**：`detections` に `bbox`,`frame_wh` を保存し、`GET /overlay` が最新の1件を返す。
   `/events` でも bbox はJSON文字列ではなくリストで返る。`/overlay` の `age_sec`（検出からの経過秒）を
   見れば「古い枠は消す」判断ができる。
-- **公開ページ（フロント / TODO）**：`/video_feed` の上に bbox を JS で描画。少し遅延するので ~1s 保持で滑らかに。
+- **公開ページ（実装済み）**：`templates/public.html` の `<canvas id="hud">` が `/overlay` を
+  0.4秒間隔で読み、`object-fit: cover` と同じ座標変換で枠を描く。`age_sec > 1.5` の枠は描かず、
+  古くなるほど薄くしてちらつきを抑える。
 
 ### ③ 左右の符号確認
 `turn_left/right` の angle 符号は実機で反転が必要な場合あり。ベンチで1回確認。

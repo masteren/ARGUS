@@ -2,6 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ARGUS 管理ダッシュボード</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
@@ -16,8 +17,8 @@
 
     <section class="summary">
         <div class="summary-card">
-            <h2>{{ total_sales }}円</h2>
-            <p>総売上</p>
+            <h2>{{ total_sales }}</h2>
+            <p>累計チケット（模擬通貨）</p>
         </div>
 
         <div class="summary-card">
@@ -73,7 +74,7 @@
                 <td>{{ tx.id }}</td>
                 <td>{{ tx.timestamp }}</td>
                 <td>{{ tx.payer_name }}</td>
-                <td>{{ tx.amount }}円</td>
+                <td>{{ tx.amount }}</td>
                 <td>{{ tx.action_label }}</td>
                 <td>{{ tx.status }}</td>
             </tr>

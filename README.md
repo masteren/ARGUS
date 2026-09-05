@@ -1,12 +1,14 @@
-# ARGUS — 統合ツリー / 整合树
+# ARGUS — 体験チケット連動型 AI 監視ロボット
 
-3モジュールを実際に対話できるよう、契約を B に揃えて整合したもの。
-`frontend-argus` ブランチ（B後端＋A検測＋C語音が同居）をベースに、対接ミスを修正した。
+6脚ロボット（Freenove ＋ Raspberry Pi 5）を、観客が**体験チケット（模擬通貨）**で操作できる
+展示作品。画像認識（A）・バックエンド＋Web（B）・音声＋実機ブリッジ（C）の3モジュールを、
+**B の実装を契約の正本**として結線してある。要件は [要件定義書_ARGUS_Ver1.0.md](要件定義書_ARGUS_Ver1.0.md)、
+インターフェースは [CONTRACT.md](CONTRACT.md) が正本。
 
 ## 構成
 
 ```
-ARGUS_backend/        担当B：Flask+SQLite 後端＋決済＋Web（変更なし・正本）
+ARGUS_backend/        担当B：Flask+SQLite 後端＋取引処理＋Web（契約の正本）
   app.py
   templates/  static/
 vision/               担当A：画像認識
@@ -47,6 +49,15 @@ bash tools/smoketest.sh
 既定ポートは **5001**（macOS の AirPlay レシーバーが 5000 を掴むため）。
 5001 も塞がっていたら `PORT=5003 bash tools/smoketest.sh`。
 
+## 準備（初回だけ）
+
+```bash
+pip install -r requirements.txt      # 自分の担当分だけで良ければ中のコメント参照
+```
+
+C（音声）を動かす人は `OPENAI_API_KEY` も設定する。B とスモークテストは Flask と
+requests だけで動く（カメラ・マイク・APIキー不要）。
+
 ## 動かし方（統合テスト・全部同じPCでOK）
 
 ```bash
@@ -54,6 +65,8 @@ bash tools/smoketest.sh
 cd ARGUS_backend && python3 app.py            # → http://localhost:5000
 # macOS で 5000 が AirPlay に取られている場合： PORT=5001 python3 app.py
 #   （A の detection_webcam.py と C の paid_poller.py も同じ PORT を読む）
+# 開発中にトレースバックが欲しいときだけ： ARGUS_DEBUG=1 python3 app.py
+#   ※ 展示では必ず OFF。同一LANの全員に Werkzeug デバッガ（＝任意コード実行）が開く。
 
 # 2) A（検出。Bのカメラを共有）
 cd vision && python3 detection_webcam.py
@@ -65,17 +78,35 @@ cd voice && python3 argus_voice.py
 実機（Pi）へ移すとき：`voice/argus_voice.py` の `bridge = MockBridge()` を
 `bridge = FreenoveBridge("<PiのIP>")` に差し替える1行だけ。
 
-## main へのマージ手順（case: あなたが review 後に push）
+## 観客のスマホから開く（展示）
+
+B は `0.0.0.0` で待ち受けるので、**同じ LAN なら他の端末から見える**。
 
 ```bash
-git checkout frontend-argus
-# このツリーの3ファイルを反映（backend は変更なし）
-#   vision/detection_webcam.py, voice/{argus_voice,paid_poller,robot_bridge}.py
-#   ＋ CONTRACT.md, README.md
-git add -A && git commit -m "integrate: align A/C to B contract, fix /upload+/events+/commands, add wave/bow"
-# 全線で1回通ったら：
-git checkout main && git merge frontend-argus
+ipconfig getifaddr en0        # 例: 192.168.0.2
+# → スマホのブラウザで http://192.168.0.2:5000/
 ```
 
-`voice/fake_backend.py` は本物のBに置き換わったので統合ツリーからは外した
-（オフライン単体テスト用に voice ブランチには残してよい）。
+- 会場 WiFi は**クライアント隔離**が有効なことが多く、その場合スマホから PC に届かない。
+  自前の携帯ルーター、またはスマホのテザリングに B を繋ぐのが確実。**当日ぶっつけは危険**。
+- 展示は**運営が用意した1台のスマホ**を主端末にする想定。画面の自動ロックを切り、
+  iOS はアクセスガイド／Android は画面固定でブラウザから出られないようにする。
+- IP は DHCP で変わる。QRコードを作るなら当日に作り直すか、ルーターで固定する。
+- `/video_feed` は MJPEG。同時視聴が増えるほどフレームレートが落ちるので、
+  多数のスマホから同時に開かせる運用は事前に負荷を試すこと。
+
+## ブランチ運用
+
+`main` が唯一の統合先。`integration` と `voice` は main に取り込み済みのため削除した。
+
+```bash
+git checkout -b <feature-branch>     # 担当ごとの作業ブランチ
+bash tools/smoketest.sh              # ALL GREEN を確認してから
+# GitHub で main への Pull Request（または main に直接 merge）
+```
+
+作業前に `git pull` で main を最新にすること。`ImageRecognition/feature` は main と
+共通の祖先を持たない独立ブランチなので、そのまま merge せず担当A と相談して取り込む。
+
+`voice/fake_backend.py` は本物のBに置き換わったので削除済み
+（オフライン単体テストが要るならモックを別途用意する）。

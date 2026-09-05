@@ -2,6 +2,8 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
+    <!-- 観客はスマートフォンで開く。これが無いとデスクトップ幅で縮小表示される -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ARGUS Live Control</title>
 
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
@@ -44,7 +46,7 @@
                 </p>
                 <p>
                     <span>CONTROL</span>
-                    <strong>DONATION</strong>
+                    <strong>TICKET</strong>
                 </p>
                 <p>
                     <span>NETWORK</span>
@@ -62,26 +64,31 @@
 
             <div class="live-screen">
                 <img src="{{ url_for('video_feed') }}" alt="ロボット視点映像" class="camera-feed">
+                <!-- AI検出枠のオーバーレイ（/overlay を読んで描画する） -->
+                <canvas id="hud" class="hud-canvas"></canvas>
             </div>
         </div>
 
     </section>
 
-    <!-- 投げ銭UI -->
+    <!-- 体験チケット操作UI -->
     <section class="payment-panel">
         <div class="section-title">
-            <p>TIP TO CONTROL</p>
-            <h2>投げ銭でARGUSを操作</h2>
+            <p>TICKET TO CONTROL</p>
+            <h2>体験チケットでARGUSを操作</h2>
+            <p class="ticket-notice">
+                ※ 体験チケットは<strong>模擬通貨</strong>です。実際の金銭は発生しません。
+            </p>
         </div>
 
         <div class="form-area">
-            <input type="text" id="payer_name" placeholder="名前を入力">
+            <input type="text" id="payer_name" placeholder="名前を入力" maxlength="24" autocomplete="off">
         </div>
 
         <div class="action-grid">
             {% for action_code, action in actions.items() %}
-            <button class="action-button" onclick="pay('{{ action_code }}')">
-                <span class="price">{{ action.amount }}円</span>
+            <button class="action-button" data-action="{{ action_code }}" onclick="pay('{{ action_code }}')">
+                <span class="price">チケット {{ action.amount }}</span>
                 <strong>{{ action.label }}</strong>
                 <small>{{ action.description }}</small>
             </button>
@@ -91,16 +98,27 @@
         <p id="result"></p>
     </section>
 
-
-
 </main>
 
 <script>
+// ==================================================
+// 体験チケットの消費
+// 画面全体を reload するとライブ映像（MJPEG）が切れて真っ黒になるため、
+// 結果表示だけを書き換える。
+// ==================================================
+const buttons = document.querySelectorAll(".action-button");
+
+function setButtonsEnabled(enabled) {
+    buttons.forEach(b => { b.disabled = !enabled; });
+}
+
 function pay(action) {
-    const payerName = document.getElementById("payer_name").value;
+    const nameInput = document.getElementById("payer_name");
+    const payerName = nameInput.value;
     const result = document.getElementById("result");
 
-    result.textContent = "PROCESSING PAYMENT...";
+    setButtonsEnabled(false);
+    result.textContent = "チケットを確認しています...";
 
     fetch("/pay", {
         method: "POST",
@@ -117,13 +135,10 @@ function pay(action) {
     .then(data => {
         if (data.ok) {
             result.textContent =
-                data.payer_name + "さんが " +
-                data.amount + "円で「" +
-                data.action_label + "」を実行しました。";
-
-            setTimeout(() => {
-                location.reload();
-            }, 1000);
+                data.payer_name + "さんの「" +
+                data.action_label + "」を受け付けました。まもなく実行します。";
+            // 展示用の共用端末では次の人が名前を入れ直すので、送信後は空にする
+            nameInput.value = "";
         } else {
             result.textContent = "ERROR: " + data.error;
         }
@@ -131,8 +146,94 @@ function pay(action) {
     .catch(error => {
         result.textContent = "通信エラーが発生しました";
         console.error(error);
+    })
+    .finally(() => {
+        setButtonsEnabled(true);
     });
 }
+
+// ==================================================
+// HUDオーバーレイ（CONTRACT.md ②）
+// /overlay の最新 bbox を映像の上に描く。古い枠は消す。
+// ==================================================
+const hud = document.getElementById("hud");
+const ctx = hud.getContext("2d");
+
+const MAX_AGE_SEC = 1.5;      // これより古い検出は描かない
+const POLL_INTERVAL_MS = 400;
+
+function resizeHud() {
+    // CSS 上の表示サイズと描画バッファを合わせる（ずれると枠が伸びる）
+    hud.width = hud.clientWidth;
+    hud.height = hud.clientHeight;
+}
+
+function drawBox(box, frameWh, label, age) {
+    const [fw, fh] = frameWh;
+
+    if (!fw || !fh) {
+        return;
+    }
+
+    // 映像は object-fit: cover で表示している。同じ変換を手で再現する。
+    const scale = Math.max(hud.width / fw, hud.height / fh);
+    const offsetX = (hud.width - fw * scale) / 2;
+    const offsetY = (hud.height - fh * scale) / 2;
+
+    const [x1, y1, x2, y2] = box;
+    const x = x1 * scale + offsetX;
+    const y = y1 * scale + offsetY;
+    const w = (x2 - x1) * scale;
+    const h = (y2 - y1) * scale;
+
+    // 検出から時間が経つほど薄くする（次の検出まで滑らかに繋ぐ）
+    const alpha = Math.max(0.25, 1 - (age || 0) / MAX_AGE_SEC);
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    ctx.strokeStyle = "#67e8f9";
+    ctx.lineWidth = 2;
+    ctx.shadowColor = "rgba(103, 232, 249, 0.9)";
+    ctx.shadowBlur = 12;
+    ctx.strokeRect(x, y, w, h);
+
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "rgba(2, 6, 23, 0.72)";
+    ctx.fillRect(x, Math.max(0, y - 20), Math.min(w, 190), 20);
+
+    ctx.fillStyle = "#67e8f9";
+    ctx.font = "12px 'JetBrains Mono', monospace";
+    ctx.fillText(label, x + 6, Math.max(12, y - 6));
+
+    ctx.restore();
+}
+
+function pollOverlay() {
+    fetch("/overlay", { cache: "no-store" })
+        .then(r => r.json())
+        .then(data => {
+            ctx.clearRect(0, 0, hud.width, hud.height);
+
+            if (!data.ok || !data.bbox || !data.frame_wh) {
+                return;
+            }
+
+            if (data.age_sec !== null && data.age_sec > MAX_AGE_SEC) {
+                return;   // 古い枠は残さない
+            }
+
+            const conf = data.confidence === null ? "" : " " + Math.round(data.confidence * 100) + "%";
+            drawBox(data.bbox, data.frame_wh, data.type + conf, data.age_sec);
+        })
+        .catch(() => {
+            // バックエンドが一時的に落ちても描画ループは止めない
+        });
+}
+
+window.addEventListener("resize", resizeHud);
+resizeHud();
+setInterval(pollOverlay, POLL_INTERVAL_MS);
 </script>
 
 </body>

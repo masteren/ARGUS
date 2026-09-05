@@ -1,0 +1,30 @@
+# ARGUS 依存パッケージ
+#
+# 全部まとめて入れる場合：
+#   pip install -r requirements.txt
+#
+# 自分の担当分だけで良い場合は、下のコメントを見て必要な行だけ入れる。
+# （B だけ動かすなら Flask + requests、A なら + opencv/ultralytics …）
+
+# ── 担当B：バックエンド＋Web ─────────────────────────────
+# sqlite3 は Python 標準ライブラリなので不要。
+Flask>=3.0
+
+# ── 共通：モジュール間の HTTP 通信（A・C・スモークテスト）──
+requests>=2.31
+
+# ── 担当A：画像認識（B のカメラ配信を読む側でも cv2 が要る）──
+opencv-python>=4.8
+ultralytics>=8.2
+numpy>=1.24
+
+# ── 担当C：音声対話（マイク・スピーカー・OpenAI API）────────
+# 実行前に環境変数 OPENAI_API_KEY を設定すること。
+openai>=1.30
+sounddevice>=0.4
+soundfile>=0.12
+
+# ── 備考 ────────────────────────────────────────────
+# ・tools/smoketest.sh は Flask と requests だけで動く（カメラ・マイク・APIキー不要）。
+# ・Raspberry Pi では opencv-python のビルドに時間がかかるため、
+#   OS のパッケージ（python3-opencv）を使う手もある。

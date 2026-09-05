@@ -1200,3 +1200,142 @@ body.ranking-page::before {
         grid-column: auto;
     }
 }
+
+
+/* ==================================================
+   HUDオーバーレイ（AI検出枠 / CONTRACT.md ②）
+   ================================================== */
+
+.public-page .hud-canvas {
+    position: absolute;
+    inset: 0;
+
+    width: 100%;
+    height: 100%;
+
+    /* 映像の上に重ねるだけ。タップは下のUIに通す */
+    pointer-events: none;
+}
+
+
+/* 体験チケットが模擬通貨であることの明示（要件定義書 NFR） */
+.public-page .ticket-notice {
+    margin: 6px 0 0;
+
+    color: #facc15;
+    font-size: 11px;
+    line-height: 1.5;
+}
+
+.public-page .ticket-notice strong {
+    color: #fde68a;
+}
+
+.public-page .action-button:disabled {
+    filter: grayscale(0.4) brightness(0.8);
+    cursor: progress;
+}
+
+
+/* ==================================================
+   公開ページ：スマートフォン（縦画面）
+   観客の主端末はスマホ。固定高さの3分割レイアウトをやめ、
+   縦に積んでスクロールさせる。
+   ================================================== */
+
+@media (max-width: 820px) {
+    .public-page .site-header {
+        height: auto;
+        padding: 10px 14px;
+        gap: 10px;
+    }
+
+    .public-page .site-header h1 {
+        font-size: 18px;
+    }
+
+    .public-page .header-label {
+        font-size: 9px;
+    }
+
+    /* 画面いっぱいに固定せず、内容の高さに任せてスクロールさせる */
+    .public-page .layout {
+        height: auto;
+        min-height: 0;
+        padding: 10px;
+
+        grid-template-rows: none;
+        gap: 10px;
+
+        overflow: visible;
+    }
+
+    .public-page .hero {
+        grid-template-columns: 1fr;
+        gap: 10px;
+    }
+
+    /* ロボット紹介カードは映像と操作の邪魔になるので後ろへ回す */
+    .public-page .robot-card {
+        order: 2;
+        padding: 12px;
+    }
+
+    .public-page .robot-image {
+        max-height: 150px;
+    }
+
+    .public-page .live-panel {
+        order: 1;
+        padding: 12px;
+    }
+
+    /* 映像は 4:3 の高さを確保する（親が固定高さでなくなるため） */
+    .public-page .live-screen {
+        aspect-ratio: 4 / 3;
+        flex: none;
+    }
+
+    /* 操作パネルは横3列をやめて縦積みにする */
+    .public-page .payment-panel {
+        grid-template-columns: 1fr;
+        gap: 10px;
+        padding: 14px 14px 34px;
+    }
+
+    .public-page .section-title h2 {
+        font-size: 17px;
+    }
+
+    /* 指で押せる大きさを確保する */
+    .public-page .form-area input {
+        height: 48px;
+        font-size: 16px;   /* iOS はこれ未満だと入力時に自動ズームする */
+    }
+
+    .public-page .action-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+    }
+
+    .public-page .action-button {
+        min-height: 72px;
+    }
+
+    .public-page .action-button strong {
+        font-size: 17px;
+    }
+
+    .public-page #result {
+        position: static;
+        margin-top: 10px;
+        font-size: 13px;
+        line-height: 1.5;
+    }
+}
+
+@media (max-width: 380px) {
+    .public-page .action-grid {
+        grid-template-columns: 1fr;
+    }
+}

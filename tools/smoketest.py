@@ -57,6 +57,10 @@ MISSION_BBOX = [100, 80, 220, 400]
 MISSION_FRAME_WH = [640, 480]
 
 
+# B の PAY_MIN_INTERVAL_SEC と同じ既定値。B 側を変えたらここも合わせる。
+PAY_MIN_INTERVAL = float(os.environ.get("ARGUS_PAY_MIN_INTERVAL", "1.5"))
+
+
 class SmokeFailure(Exception):
     """1ステップでも落ちたらこれを投げ、全体を非0終了させる。"""
 
@@ -318,6 +322,25 @@ def run_checks():
         wait_until(forward_is_done),
         "%.0f 秒待っても pending のまま" % STEP_TIMEOUT,
     )
+
+    # ── 濫用対策（要件定義書 NFR）───────────────────
+    # 展示端末は共用なので、連打だけを弾いて端末ごと締め出さないこと。
+    status, blocked = post_json("/pay", {"payer_name": "smoke_taro", "action": "forward"})
+    check(
+        "連打（%.1f秒以内の再送）は 429 で弾かれる" % PAY_MIN_INTERVAL,
+        status == 429 and blocked.get("ok") is False,
+        "status=%s body=%r" % (status, blocked),
+    )
+
+    status, bad = post_json("/pay", {"payer_name": "x" * 100, "action": "forward"})
+    check(
+        "長すぎる名前は 400 で弾かれる",
+        status == 400 and bad.get("ok") is False,
+        "status=%s body=%r" % (status, bad),
+    )
+
+    # 間隔を空ければ通常どおり受理される（＝締め出しではない）
+    time.sleep(PAY_MIN_INTERVAL + 0.1)
 
     # ── ミッション開始 ──────────────────────────────
     section("[3] 課金 search_person → ミッションが active になる")

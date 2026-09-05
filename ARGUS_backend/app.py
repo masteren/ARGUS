@@ -28,6 +28,24 @@ BASE_DIR = Path(__file__).resolve().parent
 PORT = int(os.environ.get("PORT", "5000"))
 DB_PATH = Path(os.environ.get("ARGUS_DB") or (BASE_DIR / "argus.db"))
 
+# ARGUS_DEBUG : 既定は OFF。展示は同一LANに観客の端末が居るため、debug=True の
+#               ままだと Werkzeug のデバッガ（＝任意コード実行）が誰にでも開く。
+#               開発中だけ ARGUS_DEBUG=1 で有効化する。
+DEBUG = os.environ.get("ARGUS_DEBUG", "0") == "1"
+
+# ── 入力検証・濫用対策（要件定義書 NFR）──────────────────────
+# 展示端末は共用（1台を観客が順番に使う）ため、IPで強く絞ると端末ごと止まる。
+# 防ぎたいのは「連打で命令キューが溢れ、ロボットが数分間詰まる」ことなので、
+#   ① 同一IPからの最短間隔  ② 未実行コマンドの上限
+# の2段で受け止める。
+PAY_MIN_INTERVAL_SEC = float(os.environ.get("ARGUS_PAY_MIN_INTERVAL", "1.5"))
+PENDING_COMMAND_LIMIT = 10
+MAX_PAYER_NAME_LEN = 24
+MAX_MESSAGE_LEN = 100
+
+_last_pay_at = {}                 # client ip -> 最後に受理した時刻
+_pay_guard_lock = threading.Lock()
+
 CAMERA_INDEX = 0
 CAMERA_WIDTH = 640
 CAMERA_HEIGHT = 480
@@ -35,6 +53,7 @@ CAMERA_HEIGHT = 480
 
 # ==================================================
 # アクション設定
+# amount は体験チケット（模擬通貨）の枚数。実際の金銭は動かさない。
 # ==================================================
 ACTIONS = {
     "forward": {
@@ -90,6 +109,13 @@ def get_connection():
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row
     return con
+
+
+def clean_text(value):
+    """観客が入力した文字列を整える。制御文字を落として前後の空白を取る。"""
+    if not isinstance(value, str):
+        return ""
+    return "".join(ch for ch in value if ch.isprintable()).strip()
 
 
 def rows_to_dicts(rows):
@@ -495,12 +521,44 @@ def pay():
     """観客：投げ銭をしてロボット操作命令を登録する。"""
     data = request.get_json(silent=True) or request.form
 
-    payer_name = data.get("payer_name", "").strip() or "匿名"
+    payer_name = clean_text(data.get("payer_name", "")) or "匿名"
     action = data.get("action", "").strip()
-    message = data.get("message", "").strip()
+    message = clean_text(data.get("message", ""))
 
     if action not in ACTIONS:
         return jsonify({"ok": False, "error": "存在しないアクションです"}), 400
+
+    if len(payer_name) > MAX_PAYER_NAME_LEN:
+        return jsonify(
+            {"ok": False, "error": "名前は%d文字までです" % MAX_PAYER_NAME_LEN}
+        ), 400
+
+    if len(message) > MAX_MESSAGE_LEN:
+        return jsonify(
+            {"ok": False, "error": "メッセージは%d文字までです" % MAX_MESSAGE_LEN}
+        ), 400
+
+    # 連打の受け止め（同一端末からの最短間隔）
+    client_ip = request.remote_addr or "unknown"
+    now = time.time()
+
+    with _pay_guard_lock:
+        if now - _last_pay_at.get(client_ip, 0.0) < PAY_MIN_INTERVAL_SEC:
+            return jsonify(
+                {"ok": False, "error": "操作が速すぎます。少し待ってからもう一度お願いします"}
+            ), 429
+        _last_pay_at[client_ip] = now
+
+    # ロボットが捌ける以上に命令を溜めない
+    with get_connection() as con:
+        pending = con.execute(
+            "SELECT COUNT(*) AS count FROM command_queue WHERE status = 'pending'"
+        ).fetchone()["count"]
+
+    if pending >= PENDING_COMMAND_LIMIT:
+        return jsonify(
+            {"ok": False, "error": "ARGUS が混み合っています。少し待ってからお試しください"}
+        ), 429
 
     amount = ACTIONS[action]["amount"]
     action_label = ACTIONS[action]["label"]
@@ -865,7 +923,7 @@ def health():
 if __name__ == "__main__":
     init_db()
     app.run(
-        debug=True,
+        debug=DEBUG,
         host="0.0.0.0",
         port=PORT,
         use_reloader=False,
