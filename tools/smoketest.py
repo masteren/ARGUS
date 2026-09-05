@@ -11,7 +11,7 @@ ARGUS ローカル結合スモークテスト — 三モジュールのデータ
 実機(Freenove)・マイク・カメラ・OpenAI キーは一切要らない。音声 STT/TTS は対象外。
 
 C は書き直したコピーではなく voice/paid_poller.py の poll_paid_commands を
-そのまま import してスレッドで回す。したがって「本物の接口」を叩いている。
+そのまま import してスレッドで回す。したがって「本物のエンドポイント」を叩いている。
 bridge は MockBridge を継承した RecordingBridge で、受け取った action を記録するだけ。
 
 使い方:  bash tools/smoketest.sh          （PORT=5001 で起動。PORT= で上書き可）

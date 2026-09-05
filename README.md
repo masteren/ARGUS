@@ -47,7 +47,7 @@ bash tools/smoketest.sh
 
 実機・マイク・カメラ・OpenAI キーなしで、**三モジュールのデータ閉ループ**だけを検証する
 （音声 STT/TTS は対象外）。C は書き直したコピーではなく `voice/paid_poller.py` の
-`poll_paid_commands` を **そのまま import して** 回すので、本物の接口を叩いている。
+`poll_paid_commands` を **そのまま import して** 回すので、本物のエンドポイントを叩いている。
 
 検証する経路：
 `/pay` → `/commands` → C の bridge → `/commands/{id}/done` →
