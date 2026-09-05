@@ -44,9 +44,9 @@ B は `ARGUS_DB` で使い捨てDBも指定できる（未設定なら `ARGUS_ba
 > - `/events` と `/commands` は **`{"ok":true, "events/commands":[...]}` で包まれている**。裸のリストではない。C の旧コードは裸リスト前提で **クラッシュしていた** → 修正済み。
 > - A の旧コードは `/detection`（存在しない）に `similarite` を送っていた → `/upload` + `confidence` に修正済み。
 
-## 課金アクション名（B の menu ↔ C の bridge を一致させる）
+## アクション名（B のチケットメニュー ↔ C の bridge を一致させる）
 
-| action | B の課金メニュー | C の bridge 実装 | 使う命令（Freenove 照合済み） |
+| action | B のメニュー | C の bridge 実装 | 使う命令（Freenove 照合済み） |
 |---|---|---|---|
 | `forward` | ✓ | ✓ | `CMD_MOVE#1#0#35#8#0` |
 | `turn_left` | ✓ | ✓ | `CMD_MOVE#1#0#0#8#10` |
@@ -68,7 +68,7 @@ B は `ARGUS_DB` で使い捨てDBも指定できる（未設定なら `ARGUS_ba
   `type="mission_person"` で即 `/upload`（throttle をかけない・1ミッション1回だけ）。
   **`/commands` ではなく `/mission/active` を見る**：C が数秒でコマンドを `done` にするため、
   `/commands` を見ていると A が起動トリガを取り逃がす。ミッションは成功するまで active のまま。
-- **公開ページ（TODO）**：`/mission/latest` を見て成功演出＋課金者へ通知。
+- **公開ページ（TODO）**：`/mission/latest` を見て成功演出＋チケットを使った人へ通知。
 
 データ閉ループ（A の起動トリガを除く）は `bash tools/smoketest.sh` で回帰確認できる。
 

@@ -113,8 +113,10 @@ def envoyer_detection(image, detection_type, confidence, bbox=None):
     try:
         r = requests.post(UPLOAD_URL, json=payload, timeout=2)
         print(f"[POST] /upload {detection_type} {confidence:.2f} -> {r.status_code}")
+        return r.status_code == 200
     except Exception as e:
         print(f"[POST] Backend indisponible : {e}")
+        return False
 
 
 def prendre_screenshot(frame, sim):
@@ -157,8 +159,11 @@ try:
                     if mission_active and not mission_reported:
                         # Mission payée en cours : on remonte tout de suite, sans
                         # throttle, avec le préfixe qui déclenche `success` chez B.
-                        envoyer_detection(frame, MISSION_TYPE, conf, bbox=box.xyxy[0].tolist())
-                        mission_reported = True
+                        # On ne marque « rapportée » que si B a bien reçu : sinon la
+                        # mission resterait active pour toujours sans nouvelle tentative.
+                        mission_reported = envoyer_detection(
+                            frame, MISSION_TYPE, conf, bbox=box.xyxy[0].tolist()
+                        )
                         dernier_post = now
                     elif now - dernier_post >= POST_INTERVAL:
                         envoyer_detection(frame, nom_classe, conf, bbox=box.xyxy[0].tolist())

@@ -81,7 +81,7 @@ cd ARGUS_backend && python3 app.py            # → http://localhost:5000
 # 2) A（検出。Bのカメラを共有）
 cd vision && python3 detection_webcam.py
 
-# 3) C（音声＋課金ポーリング）
+# 3) C（音声＋チケット命令のポーリング）
 cd voice && python3 argus_voice.py
 ```
 
