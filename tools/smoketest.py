@@ -424,6 +424,16 @@ def run_checks():
         status == 200 and body.get("ok") is True and len(ranking) >= 2,
         "status=%s body=%r" % (status, body),
     )
+    status, feed = get_json("/api/transactions", limit=5)
+    check(
+        "/api/transactions が直近の取引を返す（公開ページのフィード用）",
+        status == 200
+        and feed.get("ok") is True
+        and [t["payer_name"] for t in feed.get("transactions", [])][:2]
+        == ["smoke_hanako", "smoke_taro"],
+        "status=%s body=%r" % (status, feed),
+    )
+
     check(
         "内訳が正しい: smoke_taro=100(forward), smoke_hanako=500(search_person)",
         totals.get("smoke_taro") == 100 and totals.get("smoke_hanako") == 500,

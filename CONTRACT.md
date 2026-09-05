@@ -14,11 +14,14 @@
 | GET  | `/commands` | C → B | — | `{"ok":true, "commands":[...]}` |
 | POST | `/commands/{id}/done` | C → B | — | `{"ok":true}` |
 | GET  | `/ranking`, `/api/ranking` | 公開ページ | — | ランキング |
+| GET  | `/api/transactions` | 公開ページ | `?limit=5` | `{"ok":true, "transactions":[...]}` 直近の取引 |
 | GET  | `/video_feed` | 公開ページ, **A** | — | MJPEG ストリーム |
 | GET  | `/mission/active` | 公開ページ, C | — | `{"ok":true, "active":bool, "mission":{...}\|null}` |
 | GET  | `/mission/latest` | 公開ページ | — | `{"ok":true, "mission":{...}\|null, "status":"active"\|"success"\|null}` |
 | GET  | `/overlay` | 公開ページ | — | `{"ok":true, "bbox":[x1,y1,x2,y2]\|null, "frame_wh":[w,h]\|null, "type", "confidence", "age_sec"}` |
 | GET  | `/health` | 全員 | — | `{"ok":true}` |
+
+> エラー応答は全経路で `{"ok":false, "error":"..."}`。未捕捉の例外も 500 でこの形に揃える。
 
 ### 環境変数
 
@@ -28,6 +31,7 @@
 | `ARGUS_DB` | `ARGUS_backend/argus.db` | 使い捨てDBを指せる（スモークテスト用） |
 | `ARGUS_DEBUG` | `0`（OFF） | 開発中だけ `1`。**展示では必ず OFF**（同一LANにデバッガを晒さない） |
 | `ARGUS_PAY_MIN_INTERVAL` | `1.5` | 同一IPからの `/pay` の最短間隔（秒）。連打対策 |
+| `ARGUS_ROBOT_HOST` | 未設定 | C が繋ぐ実機のIP。未設定なら MockBridge（実機なしで通る） |
 
 ### ポート（契約は 5000 のまま。環境変数で逃がせるだけ）
 

@@ -69,6 +69,38 @@
             </div>
         </div>
 
+        <!-- ランキング＋直近の記録（JSで定期更新する） -->
+        <div class="board-panel">
+            <div class="panel-header">
+                <span>SUPPORTER BOARD</span>
+                <span class="online-dot">LIVE</span>
+            </div>
+
+            <p class="board-label">ランキング</p>
+            <ol class="board-ranking" id="board_ranking">
+                {% for row in ranking %}
+                <li>
+                    <span class="board-name">{{ row["payer_name"] }}</span>
+                    <span class="board-value">{{ row["total_amount"] }} TKT</span>
+                </li>
+                {% else %}
+                <li class="board-empty">まだ誰も操作していません</li>
+                {% endfor %}
+            </ol>
+
+            <p class="board-label">直近の操作</p>
+            <ul class="board-feed" id="board_feed">
+                {% for tx in transactions[:5] %}
+                <li>
+                    <span class="board-name">{{ tx["payer_name"] }}</span>
+                    <span class="board-value">{{ tx["action_label"] }}</span>
+                </li>
+                {% else %}
+                <li class="board-empty">-</li>
+                {% endfor %}
+            </ul>
+        </div>
+
     </section>
 
     <!-- 体験チケット操作UI -->
@@ -139,6 +171,7 @@ function pay(action) {
                 data.action_label + "」を受け付けました。まもなく実行します。";
             // 展示用の共用端末では次の人が名前を入れ直すので、送信後は空にする
             nameInput.value = "";
+            refreshBoard();   // 自分の名前がその場でランキングに載る
         } else {
             result.textContent = "ERROR: " + data.error;
         }
@@ -151,6 +184,60 @@ function pay(action) {
         setButtonsEnabled(true);
     });
 }
+
+// ==================================================
+// サポーターボード（ランキング＋直近の操作）
+// ページ全体を読み込み直さずに中身だけ差し替える。
+// ==================================================
+const BOARD_INTERVAL_MS = 5000;
+
+function renderRows(el, rows, nameKey, valueKey, emptyText, suffix) {
+    if (!rows || rows.length === 0) {
+        el.innerHTML = '<li class="board-empty">' + emptyText + "</li>";
+        return;
+    }
+
+    el.innerHTML = rows.map(row => {
+        const name = document.createElement("span");
+        name.className = "board-name";
+        name.textContent = row[nameKey];          // 観客が入力した文字列なのでHTMLとして扱わない
+
+        const value = document.createElement("span");
+        value.className = "board-value";
+        value.textContent = row[valueKey] + (suffix || "");
+
+        return "<li>" + name.outerHTML + value.outerHTML + "</li>";
+    }).join("");
+}
+
+function refreshBoard() {
+    fetch("/api/ranking", { cache: "no-store" })
+        .then(r => r.json())
+        .then(data => {
+            if (data.ok) {
+                renderRows(
+                    document.getElementById("board_ranking"),
+                    data.ranking, "payer_name", "total_amount",
+                    "まだ誰も操作していません", " TKT"
+                );
+            }
+        })
+        .catch(() => {});
+
+    fetch("/api/transactions?limit=5", { cache: "no-store" })
+        .then(r => r.json())
+        .then(data => {
+            if (data.ok) {
+                renderRows(
+                    document.getElementById("board_feed"),
+                    data.transactions, "payer_name", "action_label", "-", ""
+                );
+            }
+        })
+        .catch(() => {});
+}
+
+setInterval(refreshBoard, BOARD_INTERVAL_MS);
 
 // ==================================================
 // HUDオーバーレイ（CONTRACT.md ②）

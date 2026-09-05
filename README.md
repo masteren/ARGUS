@@ -85,8 +85,11 @@ cd vision && python3 detection_webcam.py
 cd voice && python3 argus_voice.py
 ```
 
-実機（Pi）へ移すとき：`voice/argus_voice.py` の `bridge = MockBridge()` を
-`bridge = FreenoveBridge("<PiのIP>")` に差し替える1行だけ。
+実機（Pi）へ移すとき：環境変数だけ。コードは触らない。
+
+```bash
+ARGUS_ROBOT_HOST=<PiのIP> python3 argus_voice.py    # 未設定なら Mock で動く
+```
 
 ## 観客のスマホから開く（展示）
 

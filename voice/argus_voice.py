@@ -1,14 +1,20 @@
+import os
 import threading
 import requests
 from openai import OpenAI
-from robot_bridge import MockBridge
+from robot_bridge import MockBridge, FreenoveBridge
 from paid_poller import poll_paid_commands, B_URL
 import sounddevice as sd
 import soundfile as sf
 import numpy as np
 
 client = OpenAI()
-bridge = MockBridge()   # 開発期はログ出力のみ。実機接続後は FreenoveBridge に差し替える
+# 実機（Pi）に繋ぐときは環境変数だけで切り替える。コードの編集は不要。
+#   ARGUS_ROBOT_HOST=192.168.0.50 python3 argus_voice.py
+# 未設定なら MockBridge（ログ出力のみ）で、実機なしでも通しで動く。
+ROBOT_HOST = os.environ.get("ARGUS_ROBOT_HOST")
+bridge = FreenoveBridge(ROBOT_HOST) if ROBOT_HOST else MockBridge()
+print("🦿 bridge =", "FreenoveBridge(%s)" % ROBOT_HOST if ROBOT_HOST else "MockBridge（実機なし）")
 
 SAMPLE_RATE = 16000
 

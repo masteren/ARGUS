@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify, render_template, redirect, url_for, Response
+from werkzeug.exceptions import HTTPException
 import sqlite3
 from pathlib import Path
 from datetime import datetime
@@ -887,6 +888,50 @@ def get_ranking():
             "ranking": rows_to_dicts(rows),
         }
     )
+
+
+@app.route("/api/transactions")
+def get_transactions():
+    """直近の取引をJSONで返す（公開ページのフィードが定期的に読む）。"""
+    limit = request.args.get("limit", 5, type=int)
+    limit = max(1, min(limit, 50))
+
+    with get_connection() as con:
+        cur = con.cursor()
+        rows = cur.execute(
+            """
+            SELECT id, timestamp, amount, action, action_label, payer_name, status
+            FROM transactions
+            WHERE status = 'paid'
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+
+    return jsonify({"ok": True, "transactions": rows_to_dicts(rows)})
+
+
+# ==================================================
+# エラー応答の統一（要件定義書 NFR）
+# debug を切ると未捕捉の例外は既定でHTMLの500ページになり、
+# fetch().json() 側が落ちる。APIと同じ形に揃えておく。
+# ==================================================
+@app.errorhandler(404)
+def handle_404(error):
+    if request.path.startswith("/api/") or request.is_json:
+        return jsonify({"ok": False, "error": "存在しないパスです"}), 404
+    return error, 404
+
+
+@app.errorhandler(Exception)
+def handle_unexpected(error):
+    # HTTPException（404など）はそのまま通し、それ以外だけJSONに包む
+    if isinstance(error, HTTPException):
+        return error
+
+    app.logger.exception("未捕捉の例外: %s", error)
+    return jsonify({"ok": False, "error": "サーバ内部でエラーが発生しました"}), 500
 
 
 # ==================================================

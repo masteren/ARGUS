@@ -202,7 +202,7 @@ body.public-page::before {
     min-height: 0;
 
     display: grid;
-    grid-template-columns: 1fr 3fr;
+    grid-template-columns: 0.85fr 2.5fr 1fr;
     gap: 14px;
 }
 
@@ -213,6 +213,7 @@ body.public-page::before {
 
 .public-page .robot-card,
 .public-page .live-panel,
+.public-page .board-panel,
 .public-page .payment-panel {
     background: rgba(12, 28, 52, 0.42);
     border: 1px solid rgba(125, 211, 252, 0.34);
@@ -1270,15 +1271,21 @@ body.ranking-page::before {
         overflow: visible;
     }
 
+    /* hero の枠を外し、映像・操作・ボードを1本の縦並びとして順序づける */
     .public-page .hero {
-        grid-template-columns: 1fr;
-        gap: 10px;
+        display: contents;
     }
 
-    /* ロボット紹介カードは映像と操作の邪魔になるので後ろへ回す */
+    /* ロボット紹介カードは映像と操作の邪魔になるので最後へ回す */
     .public-page .robot-card {
-        order: 2;
+        order: 4;
         padding: 12px;
+    }
+
+    .public-page .board-panel {
+        order: 3;
+        padding: 12px;
+        max-height: 300px;
     }
 
     .public-page .robot-image {
@@ -1296,8 +1303,9 @@ body.ranking-page::before {
         flex: none;
     }
 
-    /* 操作パネルは横3列をやめて縦積みにする */
+    /* 操作パネルは横3列をやめて縦積みにする。映像の直後に置く */
     .public-page .payment-panel {
+        order: 2;
         grid-template-columns: 1fr;
         gap: 10px;
         padding: 14px 14px 34px;
@@ -1338,4 +1346,95 @@ body.ranking-page::before {
     .public-page .action-grid {
         grid-template-columns: 1fr;
     }
+}
+
+
+/* ==================================================
+   サポーターボード（ランキング＋直近の操作）
+   ================================================== */
+
+.public-page .board-panel {
+    padding: 14px;
+    min-height: 0;
+
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+
+    overflow-y: auto;
+}
+
+.public-page .board-panel .panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    color: #67e8f9;
+    font-size: 12px;
+    letter-spacing: 1px;
+
+    flex: 0 0 auto;
+}
+
+.public-page .board-label {
+    margin: 8px 0 2px;
+
+    color: #94a3b8;
+    font-size: 10px;
+    letter-spacing: 1.5px;
+}
+
+.public-page .board-ranking,
+.public-page .board-feed {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+
+    display: grid;
+    gap: 4px;
+}
+
+.public-page .board-ranking li,
+.public-page .board-feed li {
+    padding: 5px 8px;
+
+    background: rgba(2, 6, 23, 0.55);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 8px;
+
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+
+    font-size: 12px;
+}
+
+/* 1位だけ目立たせる（「今日のオーナー」） */
+.public-page .board-ranking li:first-child {
+    border-color: rgba(250, 204, 21, 0.55);
+    box-shadow: 0 0 14px rgba(250, 204, 21, 0.18);
+}
+
+.public-page .board-ranking li:first-child .board-value {
+    color: #facc15;
+}
+
+.public-page .board-name {
+    color: #e5e7eb;
+
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.public-page .board-value {
+    color: #67e8f9;
+    font-weight: bold;
+    white-space: nowrap;
+}
+
+.public-page .board-empty {
+    color: #64748b;
+    justify-content: center;
 }
