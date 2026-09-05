@@ -68,7 +68,7 @@ B は `ARGUS_DB` で使い捨てDBも指定できる（未設定なら `ARGUS_ba
   `type` が `mission_` で始まる `/upload` を受けたら、最新の active ミッションを `success` にして
   `/upload` のレスポンスに `mission_success:true` を返す。状態は `/mission/active`・`/mission/latest`。
 - **C（実装済み）**：巡回モーション ＋ 完了を `/commands/{id}/done`。
-- **A（実装済み）**：`GET /mission/active` を2秒間隔で監視し、active の間に人物を検出したら
+- **A（実装済み）**：`GET /mission/active` を2秒間隔で確認し、active の間に人物を検出したら
   `type="mission_person"` で即 `/upload`（throttle をかけない・1ミッション1回だけ）。
   **`/commands` ではなく `/mission/active` を見る**：C が数秒でコマンドを `done` にするため、
   `/commands` を見ていると A が起動トリガを取り逃がす。ミッションは成功するまで active のまま。

@@ -323,7 +323,7 @@ def run_checks():
         "%.0f 秒待っても pending のまま" % STEP_TIMEOUT,
     )
 
-    # ── 濫用対策（要件定義書 NFR）───────────────────
+    # ── 連打への備え（要件定義書 NFR）───────────────
     # 展示端末は共用なので、連打だけを弾いて端末ごと締め出さないこと。
     status, blocked = post_json("/pay", {"payer_name": "smoke_taro", "action": "forward"})
     check(

@@ -26,7 +26,7 @@ CAMERA_SOURCE = f"{B_URL}/video_feed"          # option 1 ; mettre 0 pour une we
 
 # ── Déclencheur de mission « search_person » (CONTRACT.md ①) ───────────────
 # Quand un spectateur paie search_person, B crée une mission `active`.
-# A surveille `GET /mission/active` (et non /commands : C consomme la commande et
+# A consulte `GET /mission/active` (et non /commands : C consomme la commande et
 # la passe à `done` en quelques secondes, la fenêtre serait trop courte pour A).
 # Tant que la mission est active, la première personne détectée est envoyée avec
 # type="mission_person" → B bascule la mission en `success`.
@@ -38,7 +38,7 @@ mission_active   = False    # écrit par le thread de veille, lu par la boucle v
 mission_reported = False    # évite de spammer B une fois la mission remplie
 
 
-def surveiller_mission():
+def suivre_mission():
     """Thread de fond : tient `mission_active` à jour depuis B."""
     global mission_active, mission_reported
     while True:
@@ -132,7 +132,7 @@ def prendre_screenshot(frame, sim):
 
 
 # Veille des missions payées, en tâche de fond (daemon : s'arrête avec le script)
-threading.Thread(target=surveiller_mission, daemon=True).start()
+threading.Thread(target=suivre_mission, daemon=True).start()
 
 cap = cv2.VideoCapture(CAMERA_SOURCE)
 fps_t = time.time()

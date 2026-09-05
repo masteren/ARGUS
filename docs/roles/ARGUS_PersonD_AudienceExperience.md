@@ -17,7 +17,7 @@ Read the whole thing first, then set up the prompt at the end in your own AI.
 ---
 
 ### 1. Project introduction
-**ARGUS** is an **AI surveillance robot** built on a six-legged robot (Freenove Big Hexapod + Raspberry Pi 5). It watches its surroundings with a camera, detects people and objects, can be monitored remotely from a dashboard, and can talk with you by voice.
+**ARGUS** is an **AI companion robot** built on a six-legged robot (Freenove Big Hexapod + Raspberry Pi 5). It watches its surroundings with a camera, detects people and objects, can be followed from a dashboard, and can talk with you by voice.
 
 **HEW version concept:** visitors watch the **live video (with AI-detection overlay)** on their phone, and **pay (tip) to make the robot perform actions or missions**. Every payment is stored in the database (required for HEW: "a web service where money moves"). No real money moves — it's simulated via Stripe test mode or mock data.
 
@@ -51,7 +51,7 @@ Design the public page that visitors see and tap:
 - Tip / action buttons (e.g., ¥100 single action, ¥300 30-sec control, ¥500 "find X" mission)
 - Recent transaction feed
 - Tip ranking / "Today's Owner" board
-- The overall "Person of Interest" surveillance-HUD aesthetic
+- The overall near-future mission-HUD aesthetic
 
 You deliver **mockups + assets + exact copy** (Figma, Canva, slides, or even hand sketches). B turns them into the real page. You review the result and request changes.
 
@@ -129,9 +129,9 @@ Both Claude and ChatGPT have a **Projects** feature: set the prompt once, and ev
 ```
 You are an assistant helping me with the "Audience Experience" part of a team robotics project. I am NOT a programmer — I do design, writing, presentation, and testing. When you help me, give me designs, copy, materials, plans, and step-by-step non-code instructions. Do not expect me to write production code; if code is needed, produce something I can hand to my teammate, and explain it plainly.
 
-[Project] ARGUS — an AI surveillance robot based on a Raspberry Pi 5 + Freenove six-legged robot. A 4-person team. Three-layer architecture (locomotion = off-the-shelf Freenove / AI layer = ours / IoT layer = ours). To fit the HEW theme "a web service where money moves," it becomes a "pay-to-control AI surveillance robot": visitors pay (tip) to make the robot do actions/missions, and every transaction is stored in the DB. No real money moves — Stripe test mode or mock data.
+[Project] ARGUS — an AI companion robot based on a Raspberry Pi 5 + Freenove six-legged robot. A 4-person team. Three-layer architecture (locomotion = off-the-shelf Freenove / AI layer = ours / IoT layer = ours). To fit the HEW theme "a web service where money moves," it becomes a "ticket-to-control AI companion robot": visitors pay (tip) to make the robot do actions/missions, and every transaction is stored in the DB. No real money moves — Stripe test mode or mock data.
 
-[My role] Audience Experience (no code). I (1) design the visitor-facing web page (live video, tip/action buttons, transaction feed, tip ranking, a "Person of Interest" surveillance-HUD look) as mockups + copy + assets and hand them to the backend teammate to implement; (2) make exhibition/presentation materials (poster, slide deck, ~1-min demo script, booth signage, printed price/action menu, QR standee); (3) own all audience-facing copy and propose human-readable action names; (4) test the whole system as the "audience" and file bug reports.
+[My role] Audience Experience (no code). I (1) design the visitor-facing web page (live video, tip/action buttons, transaction feed, tip ranking, a near-future mission-HUD look) as mockups + copy + assets and hand them to the backend teammate to implement; (2) make exhibition/presentation materials (poster, slide deck, ~1-min demo script, booth signage, printed price/action menu, QR standee); (3) own all audience-facing copy and propose human-readable action names; (4) test the whole system as the "audience" and file bug reports.
 
 [Team structure] Star topology centered on the backend (Person B). Person A does image recognition and posts detections to B. Person B does the Flask+SQLite backend, payment, and web pages. Person C (the leader) does voice dialogue and final integration. I (D) depend only on B, and route anything touching A or C through B or the leader — I never edit their code.
 

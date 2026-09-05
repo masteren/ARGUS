@@ -11,14 +11,14 @@
 これは、ARGUSプロジェクトで **あなたが担当する部分** をまとめた資料です。
 - 中身: プロジェクトの紹介 → チームの分担 → あなたの担当範囲 → 開発の進め方 → スケジュール。
 - **一番下に、あなた専用の「AIプロンプト」と、その使い方（AIに『プロジェクト』として登録すると毎回貼らずに済む）を用意しています。**
-- ⚠️ **今回の更新点**: HEWの主題「お金が動くWebサービス」に合わせ、**「投げ銭で操作するAI監視ロボット」** という形に進化しました。観客が課金してロボットに **ミッション（例:「人を探せ」）** を出せます。あなたの検出は、そのミッションの成否を決める **見せ場** になります。
+- ⚠️ **今回の更新点**: HEWの主題「お金が動くWebサービス」に合わせ、**「投げ銭で操作するAI見守りロボット」** という形に進化しました。観客が課金してロボットに **ミッション（例:「人を探せ」）** を出せます。あなたの検出は、そのミッションの成否を決める **見せ場** になります。
 
 まず全体に目を通して、最後のプロンプトを自分のAIに設定してください。
 
 > 💡 **この資料の細部は「叩き台」です。** モデル名・JSON項目・しきい値などは例にすぎません。**大きな方向性（＝検出してBへPOST、検出が課金ミッションの見せ場になる）が合っていれば、より良い設計・実装を自由に変えてOK**です。AIにもそう伝えてあります。
 
 ### 1. プロジェクト紹介
-**ARGUS（アーガス）** は、6脚ロボット（Freenove Big Hexapod + Raspberry Pi 5）をベースにした **AI監視ロボット** です。カメラで周囲を見て人や物を検出し、その情報を遠隔のダッシュボードで監視でき、さらに音声でロボットと対話できます。
+**ARGUS（アーガス）** は、6脚ロボット（Freenove Big Hexapod + Raspberry Pi 5）をベースにした **AI見守りロボット** です。カメラで周囲を見て人や物を検出し、その情報を遠隔のダッシュボードで見守りでき、さらに音声でロボットと対話できます。
 
 **HEW版のコンセプト**: 観客はスマホのWebページから **ライブ映像（あなたのAI検出オーバーレイ付き）** を見て、**課金（投げ銭）してロボットにアクションやミッションを出せます**。課金履歴はDBに残ります（HEW必須）。お金は実際には動かさず、Stripeテストモードか模擬データで想定します。
 
@@ -29,7 +29,7 @@
 
 ### 2. チームの分担（3人）
 - **担当A：画像認識（＝あなた）** — Pi 5上でYOLO/OpenCV。人物/物体を検出してバックエンドへ送る。
-- **担当B：バックエンド＋ダッシュボード＋決済** — Flask+SQLite。検出を受信・保存、課金を受け取り取引を記録、課金→アクション発行、Web（観客向け公開ページ＋監視ダッシュボード）。
+- **担当B：バックエンド＋ダッシュボード＋決済** — Flask+SQLite。検出を受信・保存、課金を受け取り取引を記録、課金→アクション発行、Web（観客向け公開ページ＋見守りダッシュボード）。
 - **担当C：音声対話＋統合（任／リーダー）** — 音声でロボットと対話、課金アクション・音声意図を歩行層へ橋渡し、全体統合。機体はCが管理。
 
 各モジュールは疎結合です。データは **B（バックエンド）を中心としたスター型** で流れます:
@@ -95,14 +95,14 @@
 Voici le document qui résume **la partie dont tu es responsable** dans le projet ARGUS.
 - Contenu : présentation du projet → répartition des rôles → ton périmètre → méthode de développement → calendrier.
 - **Tout en bas, tu trouveras un « prompt IA » dédié, ainsi que la façon de l'utiliser (en l'enregistrant comme un « projet » dans ton IA, tu n'auras plus à le recoller à chaque fois).**
-- ⚠️ **Nouveauté** : pour coller au thème HEW « un service web où l'argent circule », le projet devient un **« robot de surveillance IA qu'on pilote en payant »**. Les spectateurs paient pour donner au robot des missions (ex. : « trouve une personne »). Tes détections sont le **moment fort** qui décide du succès de la mission.
+- ⚠️ **Nouveauté** : pour coller au thème HEW « un service web où l'argent circule », le projet devient un **« robot compagnon IA qu'on pilote avec un ticket »**. Les spectateurs paient pour donner au robot des missions (ex. : « trouve une personne »). Tes détections sont le **moment fort** qui décide du succès de la mission.
 
 Lis d'abord l'ensemble, puis configure le prompt final dans ton IA.
 
 > 💡 **Les détails de ce document sont une « base de départ ».** Noms de modèle, champs JSON, seuils… ne sont que des exemples. **Tant que la grande direction est respectée (détecter puis POST vers B, et faire de la détection le moment fort de la mission payante), tu peux librement améliorer le design et l'implémentation.** L'IA en est informée aussi.
 
 ### 1. Présentation du projet
-**ARGUS** est un **robot de surveillance assisté par IA**, basé sur un robot hexapode (Freenove Big Hexapod + Raspberry Pi 5). Il observe les alentours via une caméra, détecte personnes et objets, permet une surveillance à distance via un tableau de bord, et permet de dialoguer avec le robot par la voix.
+**ARGUS** est un **robot compagnon assisté par IA**, basé sur un robot hexapode (Freenove Big Hexapod + Raspberry Pi 5). Il observe les alentours via une caméra, détecte personnes et objets, peut être suivi à distance via un tableau de bord, et permet de dialoguer avec le robot par la voix.
 
 **Concept HEW** : les spectateurs voient le **flux vidéo en direct (avec ta superposition de détections IA)** depuis leur téléphone, et **paient (pourboire) pour donner des actions ou des missions au robot**. L'historique des paiements est conservé en DB (obligatoire pour HEW). L'argent ne circule pas réellement : on simule via le mode test de Stripe ou des données fictives.
 
@@ -215,7 +215,7 @@ Claude et ChatGPT ont une fonction « **Projet** » : tu enregistres le prompt u
 ```
 あなたは、私が担当する「画像認識モジュール」の開発を手伝うアシスタントです。以下はチーム開発中のロボットプロジェクトの背景です。
 
-【プロジェクト】ARGUS — Raspberry Pi 5 + Freenove 6脚ロボットをベースにしたAI監視ロボット。3人チーム。3層構成（歩行層=Freenove既製 / AI層=自作 / IoT層=自作）。HEWの主題「お金が動くWebサービス」に合わせ、「投げ銭で操作するAI監視ロボット」にする。観客が課金してロボットにアクション/ミッション（例:「人を探せ」）を出せる。
+【プロジェクト】ARGUS — Raspberry Pi 5 + Freenove 6脚ロボットをベースにしたAI見守りロボット。3人チーム。3層構成（歩行層=Freenove既製 / AI層=自作 / IoT層=自作）。HEWの主題「お金が動くWebサービス」に合わせ、「投げ銭で操作するAI見守りロボット」にする。観客が課金してロボットにアクション/ミッション（例:「人を探せ」）を出せる。
 【私の担当】画像認識。Pi 5上でYOLO/OpenCVのローカル推論。カメラ(Logitech C270)で人物/物体を検出し、検出イベント（JSON: timestamp, type, confidence, image）を生成して、チームのFlaskバックエンドへHTTP POSTする。ライブ映像に検出オーバーレイ（bbox・ラベル）を描く＝観客が見る画面。課金ミッションの対象を検出したら type にそれが分かる値を入れてBへ送り、成功演出に使ってもらう。
 【全体構成】スター型。私（画像）→バックエンドへPOSTするだけ。音声・歩行などの他モジュールとは直接通信しない。
 【開発方針】まずノートPC＋USBカメラだけで独立して開発する。バックエンドが無くてもログ出力やlocalhostスタブで検証する。実機（Pi 5）には後で載せる。
@@ -231,7 +231,7 @@ Claude et ChatGPT ont une fonction « **Projet** » : tu enregistres le prompt u
 ```
 Tu es un assistant qui m'aide à développer mon « module de reconnaissance d'image ». Voici le contexte d'un projet robotique en équipe.
 
-[Projet] ARGUS — un robot de surveillance par IA basé sur un Raspberry Pi 5 + un robot hexapode Freenove. Équipe de 3 personnes. Architecture en 3 couches (locomotion = Freenove prêt à l'emploi / couche IA = développée par nous / couche IoT = développée par nous). Pour coller au thème HEW « un service web où l'argent circule », on en fait un « robot de surveillance IA qu'on pilote en payant » : les spectateurs paient pour donner au robot des actions/missions (ex. « trouve une personne »).
+[Projet] ARGUS — un robot compagnon IA basé sur un Raspberry Pi 5 + un robot hexapode Freenove. Équipe de 3 personnes. Architecture en 3 couches (locomotion = Freenove prêt à l'emploi / couche IA = développée par nous / couche IoT = développée par nous). Pour coller au thème HEW « un service web où l'argent circule », on en fait un « robot compagnon IA qu'on pilote avec un ticket » : les spectateurs paient pour donner au robot des actions/missions (ex. « trouve une personne »).
 [Mon rôle] Reconnaissance d'image. Inférence locale YOLO/OpenCV sur le Pi 5. Détecter des personnes/objets via une caméra (Logitech C270), générer un événement de détection (JSON : timestamp, type, confidence, image) et l'envoyer par HTTP POST au backend Flask de l'équipe. Dessiner la superposition de détection (bbox, label) sur le flux en direct = l'écran que voient les spectateurs. Quand je détecte la cible d'une mission payée, je mets une valeur identifiable dans `type` pour que le backend déclenche une animation de réussite.
 [Architecture globale] En étoile. Moi (image) → j'envoie seulement des POST au backend. Je ne communique jamais directement avec les autres modules (voix, locomotion).
 [Méthode de dev] Je développe d'abord en autonomie avec un simple portable + une webcam USB. Même sans le backend, je valide via des logs ou un stub localhost. Le portage sur le matériel réel (Pi 5) viendra plus tard.
