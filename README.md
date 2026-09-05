@@ -112,7 +112,7 @@ ipconfig getifaddr en0        # 例: 192.168.0.2
 | [@masteren](https://github.com/masteren)（任） | C：音声対話・実機ブリッジ・統合／リーダー | `voice/` |
 | [@tsukky227](https://github.com/tsukky227) | B：バックエンド・Web・取引処理 | `ARGUS_backend/` |
 | [@Hochadamas](https://github.com/Hochadamas)（ベン） | A：画像認識 | `vision/` |
-| 担当D | 観客体験・展示物・テスト | `docs/roles/ARGUS_PersonD_AudienceExperience.md` |
+| [@chibayanki](https://github.com/chibayanki) | D：観客体験・Webデザイン・展示物・テスト | `docs/roles/ARGUS_PersonD_AudienceExperience.md` |
 
 ## ブランチ運用
 
