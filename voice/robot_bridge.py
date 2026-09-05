@@ -1,6 +1,6 @@
 # robot_bridge.py
 # 歩行ブリッジ：「動作」を Freenove コマンドに変換する。上位層は send() だけを扱い、下位が Mock か実機かは意識しない。
-# 【統合版】B の課金アクション名（forward / turn_left / turn_right / bow / wave / search_person）を全てカバーする。
+# 【統合版】B のチケットアクション名（forward / turn_left / turn_right / bow / wave / search_person）を全てカバーする。
 #   コマンド書式は Freenove 公式リポジトリ Code/Server/command.py・server.py・control.py と照合済み（2026-08）。
 #   使える命令はこれだけ：CMD_MOVE / CMD_ATTITUDE(±15) / CMD_POSITION / CMD_HEAD / CMD_BUZZER / CMD_RELAX / CMD_BALANCE
 #   （CMD_WAVE のような専用「動作」命令は存在しない → wave/bow はこれらを組み合わせたジェスチャで作る）
@@ -29,7 +29,7 @@ class FreenoveBridge(RobotBridge):
     def __init__(self, host, port=5002):
         self.host = host
         self.port = port
-        self.lock = threading.Lock()   # 音声スレッド/課金スレッドが同時に socket へ書き込む競合を防ぐ
+        self.lock = threading.Lock()   # 音声スレッド/チケットスレッドが同時に socket へ書き込む競合を防ぐ
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.connect((host, port))   # host = Pi の wlan0 IP（同一機での統合なら 127.0.0.1 でも可）
 
@@ -51,7 +51,7 @@ class FreenoveBridge(RobotBridge):
         "relax":      lambda s: "CMD_RELAX\n",
     }
 
-    # ── ジェスチャ（複数コマンドの連続。lock を保持したまま実行し、途中で音声/課金が割り込まないようにする）──
+    # ── ジェスチャ（複数コマンドの連続。lock を保持したまま実行し、途中で音声/チケット命令が割り込まないようにする）──
     def _gesture_bow(self):
         # お辞儀：体を前傾（pitch+）→ 戻す。CMD_ATTITUDE#roll#pitch#yaw、各±15。
         self._raw("CMD_ATTITUDE#0#12#0\n"); time.sleep(0.8)
@@ -65,9 +65,9 @@ class FreenoveBridge(RobotBridge):
         self._raw("CMD_ATTITUDE#0#0#0\n")
 
     def _gesture_search(self):
-        # 【search_person = ¥500 ミッションの "移動" 部分だけ】その場でゆっくり旋回して周囲を見回す。
-        # ★ミッション成立（人物検出→成功演出）は A と B 側の実装が必要。CONTRACT.md 参照。
-        #   ここは C 側の「巡回モーション」のみ。A に検出開始を伝える処理は未接続（TODO）。
+        # 【search_person ミッションの "移動" 部分】その場でゆっくり旋回して周囲を見回す。
+        # 成功判定は A と B が担う：A が `/mission/active` を見て人物を `mission_person` で
+        # 上げ、B が missions を success にする（接続済み）。ここは C の巡回モーションのみ。
         for _ in range(3):
             self._raw(self._move(angle=10)); time.sleep(1.0)
         self._raw(self._move())   # 停止
@@ -99,7 +99,6 @@ class FreenoveBridge(RobotBridge):
 #   from robot_bridge import MockBridge
 #   bridge = MockBridge()
 #
-# 実機の準備ができたら、argus_voice.py 内でこの1行を差し替えるだけ：
-#   from robot_bridge import FreenoveBridge
-#   bridge = FreenoveBridge("192.168.x.x")   # Pi の wlan0 IP
-# 上位の音声コードや課金ポーリングコードは1行も変更不要。
+# 実機の準備ができたら、環境変数を渡すだけ（コードの編集は不要）：
+#   ARGUS_ROBOT_HOST=192.168.x.x python3 argus_voice.py   # Pi の wlan0 IP
+# 上位の音声コードやチケットのポーリングコードは1行も変更不要。

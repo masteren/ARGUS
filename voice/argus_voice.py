@@ -150,9 +150,9 @@ def voice_loop():
 
 # ───────── 起動 ─────────
 if __name__ == "__main__":
-    print("=== ARGUS 音声対話 + 課金 起動。Ctrl+C で終了 ===")
+    print("=== ARGUS 音声対話 + チケット命令 起動。Ctrl+C で終了 ===")
 
-    # 課金ポーリングはバックグラウンドスレッドで実行（daemon=メインプログラム終了時に自動終了）
+    # チケット命令のポーリングはバックグラウンドスレッドで実行（daemon=メインプログラム終了時に自動終了）
     paid_thread = threading.Thread(
         target=poll_paid_commands, args=(bridge,), daemon=True
     )

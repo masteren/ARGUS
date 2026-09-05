@@ -1,4 +1,4 @@
-# paid_poller.py —— 第2の入力経路：B のキューから課金動作を取り出し、同じ bridge に流す。
+# paid_poller.py —— 第2の入力経路：B のキューからチケット動作を取り出し、同じ bridge に流す。
 #
 # ── 統合時の変更点（2026 統合）─────────────────────────────────
 #  ・B_URL を本物の B（ポート5000）に変更（旧: 5001 の偽サーバー）。
@@ -24,7 +24,7 @@ def _extract_list(payload, key):
     return []
 
 def poll_paid_commands(bridge, action_replies=None, interval=2):
-    print("💰 課金ポーリング開始...")
+    print("🎫 チケット命令のポーリング開始...")
     while True:
         try:
             resp = requests.get(f"{B_URL}/commands", timeout=3).json()
@@ -32,7 +32,7 @@ def poll_paid_commands(bridge, action_replies=None, interval=2):
             for c in cmds:
                 action = c["action"]
                 label = c.get("action_label") or c.get("payer_name") or action
-                print(f"💰 課金アクション: {label} → {action}")
+                print(f"🎫 チケット: {label} → {action}")
                 bridge.send(action, paid=True)                       # ロボットを動かす
                 requests.post(f"{B_URL}/commands/{c['id']}/done", timeout=3)  # 完了報告
         except Exception as e:
