@@ -1,6 +1,7 @@
 import os
 import threading
 import requests
+from datetime import datetime
 from openai import OpenAI
 from robot_bridge import MockBridge, FreenoveBridge
 from paid_poller import poll_paid_commands, B_URL
@@ -21,7 +22,12 @@ SAMPLE_RATE = 16000
 SYSTEM_PROMPT = """あなたは「ARGUS（アーガス）」という6脚の相棒ロボットです。
 - 一人称は「ARGUS」。簡潔に、少しメカっぽく、フレンドリーに話す。
 - 返事は1〜2文の短さ。長く喋らない。
-- 日本語で答える。"""
+- 日本語で答える。
+- カメラとYOLOによる物体検出を持っている。「参考：」で渡される検出結果が
+  いま見えているもの。視覚が無いとは絶対に言わない。
+- 移動を実行するのは別の仕組み（歩行ブリッジ）で、この返答からは動けない。
+  だから「移動します」「前進します」のように動いたふりを絶対にしない。
+  移動を頼まれたと思ったら、聞き取れなかったのでもう一度言ってほしい、と返す。"""
 
 # 動作が確定したときの定型返事
 ACTION_REPLIES = {
@@ -34,7 +40,10 @@ ACTION_REPLIES = {
 
 # キーワード → 動作。これらの語を聞き取ったら対応する動作を発火させる。
 def detect_intent(text):
-    if any(w in text for w in ["前進", "進んで", "すすめ"]):
+    # 「前に行って」「前にいて」（STT の揺れ）も前進として拾う。ここを外すと
+    # 動作は発火しないのに LLM が「移動します」と答えてしまう（下の SYSTEM_PROMPT 参照）。
+    if any(w in text for w in ["前進", "進んで", "すすめ",
+                               "前に行", "前へ行", "前に出", "前にいて"]):
         return "forward"
     if any(w in text for w in ["後退", "後ろ", "下がっ", "バック"]):
         return "back"
@@ -48,10 +57,25 @@ def detect_intent(text):
 
 # 「何が見えているか」を尋ねているかどうかを判定する
 def is_vision_question(text):
-    keywords = ["何が見える", "何見える", "見えてる", "見える",
+    # 「見える」だけだと「何が見えますか？」が漏れる。活用形を穴埋めするのは
+    # きりが無いので語幹「見え」で拾う。取りこぼしても下の else で検出結果を
+    # 渡すので、ARGUS が「視覚センサーが無い」と答えることはない。
+    keywords = ["見え", "みえ", "映って", "写って",
                 "周り", "周囲",
                 "what do you see", "what can you see"]
     return any(k in text for k in keywords)
+
+# 何秒前までの検出を「今見えているもの」と呼ぶか
+DETECTION_FRESH_SEC = 10
+
+
+def _age_sec(created_at):
+    """検出時刻（B の isoformat 文字列）から経過秒を返す。読めなければ None。"""
+    try:
+        return (datetime.now() - datetime.fromisoformat(created_at)).total_seconds()
+    except (TypeError, ValueError):
+        return None
+
 
 # B から最新の検出結果を読み取り、一文にまとめて LLM の参考にする
 def get_detections():
@@ -59,15 +83,26 @@ def get_detections():
         # ── 統合時の変更点 ──
         # B の /events は {"ok": true, "events": [...]} を返す（偽サーバーは裸のリストだった）。
         # どちらの形でも動くよう吸収する。
-        payload = requests.get(f"{B_URL}/events", timeout=3).json()
+        payload = requests.get(f"{B_URL}/events?limit=5", timeout=3).json()
         if isinstance(payload, dict):
             events = payload.get("events", [])
         else:
             events = payload
         if not events:
             return "今は特に何も検出していません。"
-        items = [f"{e['type']}(信頼度{e.get('confidence', '?')})" for e in events]
-        return "検出したもの: " + "、".join(items)
+
+        # /events は新しい順。A は1フレームにつき1件しか上げないので、並んでいる
+        # 複数件は「複数の対象」ではなく同じ対象の連続スナップショット。件数を
+        # そのまま渡すと LLM が「3人います」と誤答するため、最新の1件だけ渡す。
+        latest = events[0]
+        age = _age_sec(latest.get("created_at"))
+        if age is not None and age > DETECTION_FRESH_SEC:
+            return f"今は何も見えていません（最後の検出は約{int(age)}秒前）。"
+
+        # ミッション報告は type が "mission_person" になる。そのまま渡すと
+        # ARGUS が「mission_person が見えます」と喋るので接頭辞を外す。
+        nom = latest.get("type", "").replace("mission_", "")
+        return f"今見えているもの: {nom}（信頼度{latest.get('confidence', '?')}）"
     except Exception as e:
         print("[events]", e)
         return "検出データが取得できませんでした。"
@@ -132,18 +167,21 @@ def voice_loop():
             print("（聞き取れませんでした）")
             continue
 
-        action = detect_intent(user_text)
-        if action:
-            # 動作指令の場合：歩行ブリッジを発火 + 即座に定型確認を返す（LLMは通さない）
-            bridge.send(action)
-            reply = ACTION_REPLIES.get(action, "了解。")
-        elif is_vision_question(user_text):
+        # 「右に何が見える？」のような質問は、先に動作判定へ落ちると右旋回に
+        # なってしまう。質問かどうかを先に見る。
+        if is_vision_question(user_text):
             # 「何が見える」の場合：検出データを読み、それを使って LLM に答えさせる
             detections = get_detections()
             reply = ask_argus(f"{user_text}\n\n（参考：{detections}）")
+        elif detect_intent(user_text):
+            # 動作指令の場合：歩行ブリッジを発火 + 即座に定型確認を返す（LLMは通さない）
+            action = detect_intent(user_text)
+            bridge.send(action)
+            reply = ACTION_REPLIES.get(action, "了解。")
         else:
-            # 通常の対話
-            reply = ask_argus(user_text)
+            # 通常の対話。ここでも検出結果を添えておく。視覚質問の言い回しが
+            # キーワードから漏れても、ARGUS が「何も見えない」と答えずに済む。
+            reply = ask_argus(f"{user_text}\n\n（参考：{get_detections()}）")
 
         print("🤖 ARGUS:", reply)
         speak(reply)

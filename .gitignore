@@ -5,3 +5,5 @@ __pycache__/
 ARGUS_backend/argus.db
 ARGUS_backend/argus.smoketest.db
 ARGUS_backend/argus.smoketest.log
+
+vision/yolov8n.pt

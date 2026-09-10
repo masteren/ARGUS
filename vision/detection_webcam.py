@@ -64,11 +64,25 @@ MAX_ALERTES     = 5
 FRAMES_REQUIS   = 3
 WARMUP          = 2
 CONF_MIN_POST   = 0.50
-POST_INTERVAL   = 3.0
+# POST_INTERVAL : la page publique efface les boites de plus de 1.5 s
+# (MAX_AGE_SEC dans public.html). A 3 s d'intervalle le cadre clignotait donc
+# une fois sur deux. 1 s garde un HUD continu. Chaque POST embarque une image
+# JPEG en base64 : pour une longue expo, remonter via ARGUS_POST_INTERVAL.
+POST_INTERVAL   = float(os.environ.get("ARGUS_POST_INTERVAL", "1.0"))
 CLASSES_POST    = {"person"}
 dernier_post    = 0
 
-model = YOLO("yolov8n_ncnn_model")
+# ── Modèle YOLO ────────────────────────────────────────────────
+# Sur le Pi on utilise l'export ncnn (dossier yolov8n_ncnn_model/), nettement
+# plus rapide sur ARM. Ce dossier n'est pas dans le dépôt et n'existe pas sur
+# une machine de dev : on retombe alors sur le .pt, qu'ultralytics télécharge
+# tout seul au premier lancement. Surchargeable par ARGUS_YOLO_MODEL.
+MODELE_NCNN = "yolov8n_ncnn_model"
+MODELE = os.environ.get("ARGUS_YOLO_MODEL") or (
+    MODELE_NCNN if os.path.isdir(MODELE_NCNN) else "yolov8n.pt"
+)
+print(f"[YOLO] modele = {MODELE}", flush=True)
+model = YOLO(MODELE)
 
 mode             = "normal"
 nom_cible        = None
