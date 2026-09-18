@@ -7,3 +7,7 @@ ARGUS_backend/argus.smoketest.db
 ARGUS_backend/argus.smoketest.log
 
 vision/yolov8n.pt
+
+# 学校配布のサンプル（他チームの成果物なので公開リポジトリに入れない）
+*_sample.png
+*_sample.pdf

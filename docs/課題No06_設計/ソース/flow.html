@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="utf-8">
+<style>
+  body { margin:0; padding:28px 32px 34px; background:#f7f9fc; font-family:"Hiragino Sans","Noto Sans JP",sans-serif; }
+  .title { font-size:20px; font-weight:700; color:#1f2a44; margin:0 0 2px; }
+  .sub { font-size:12.5px; color:#5b6b8c; margin:0 0 18px; }
+  .note { margin-top:16px; font-size:11.5px; color:#5b6b8c; line-height:1.9; border-top:1px solid #d9e0ee; padding-top:10px; }
+  .note b { color:#1f2a44; }
+  #d { display:inline-block; }
+</style></head><body>
+<p class="title">ARGUS 画面遷移図（Ver1.0 / HEW展示版）</p>
+<p class="sub">画面は3つ。観客の操作は公開ページ1枚で完結し（ページ遷移なし・fetch で結果だけ差し替え）、その結果は 公開ページのボード・ランキング画面・管理ダッシュボード の3か所に現れる。</p>
+<div id="d"><pre class="mermaid">
+flowchart TD
+
+  subgraph AUD["観客：スマートフォン（iOS Safari / Android Chrome・縦画面）"]
+    direction TB
+    P1["<b>公開ページ</b> /<br/>ライブ映像＋AI検出枠／体験チケット操作／サポーターボード"]
+    S1["名前を入力（任意・24文字まで）"]
+    S2["アクションボタンを押す<br/>前進 100 ／ 左旋回 100 ／ 右旋回 100<br/>お辞儀 300 ／ 手を振る 300 ／ 人を探す 500"]
+    S3{"POST /pay<br/>アクション検証・連打制御"}
+    S4["受付メッセージを表示<br/>○○さんの「△△」を受け付けました。<br/>まもなく実行します。"]
+    S5["エラーメッセージを表示<br/>400：存在しないアクション・文字数超過<br/>429：操作が速すぎます・混み合っています<br/>通信断：通信エラーが発生しました"]
+  end
+
+  subgraph MON["会場モニタ：大型ディスプレイ（PC Chrome・常時表示）"]
+    direction TB
+    P2["<b>ランキング画面</b> /ranking<br/>TOP3表彰台／4位以下一覧／累計チケット・本日の命令数・参加人数／最新の操作"]
+  end
+
+  subgraph OPS["運営：PC（Chrome）"]
+    direction TB
+    P3["<b>管理ダッシュボード</b> /dashboard<br/>サマリ3種／ロボット命令キュー／取引履歴／AI検出履歴"]
+    P4["/dummy/detection<br/>動作確認用のダミー検出を1件登録"]
+  end
+
+  subgraph API["画面を持たない経路（JSON / 映像・自動更新）"]
+    direction TB
+    A1["GET /video_feed（MJPEG）"]
+    A2["GET /overlay（0.4秒ごと・検出枠）"]
+    A3["GET /api/ranking・/api/transactions（5秒ごと）"]
+    A4["GET /mission/latest（「人を探す」の成功演出：未実装）"]
+    A5["GET /ranking（ページ全体を15秒ごとに再読込）"]
+  end
+
+  P1 --> S1 --> S2 --> S3
+  S3 -- "200 OK" --> S4
+  S3 -- "400 / 429 / 通信断" --> S5
+  S4 -- "ボードを即時更新（画面遷移なし）" --> P1
+  S5 -- "同じ画面のまま再操作できる" --> P1
+
+  P1 -. "映像を受信" .-> A1
+  P1 -. "検出枠を受信" .-> A2
+  P1 -. "ランキング・直近の操作を受信" .-> A3
+  P1 -. "成功演出（今後の実装）" .-> A4
+  P2 -. "15秒ごとに自動更新" .-> A5
+
+  S4 == "取引・命令として記録され、運営画面に現れる" ==> P3
+  S4 == "ランキングに反映される" ==> P2
+  P3 --> P4
+  P4 -- "登録後リダイレクト" --> P3
+
+  classDef page fill:#e7ecfb,stroke:#5b6bbf,stroke-width:1.4px,color:#1f2a44;
+  classDef state fill:#ffffff,stroke:#9aa7c7,color:#1f2a44;
+  classDef api fill:#eef6f1,stroke:#7fae94,color:#1f3a2a;
+  classDef err fill:#fdeeee,stroke:#d89a9a,color:#5b2020;
+  class P1,P2,P3,P4 page;
+  class S1,S2,S3,S4 state;
+  class S5 err;
+  class A1,A2,A3,A4,A5 api;
+</pre></div>
+<p class="note">
+<b>画面遷移が起きない箇所</b>：体験チケットの操作は <code>fetch("/pay")</code> で送り、結果メッセージとサポーターボードだけを書き換える。ページを再読込するとライブ映像（MJPEG）が切れるため、意図的に遷移させない。<br>
+<b>ログイン画面がない理由</b>：会員登録・ログインは Ver1.0 のスコープ外。観客はその場で名前を入力するだけで参加でき、未入力のときは「匿名」として記録する。<br>
+<b>公開範囲</b>：3画面とも会場ローカル LAN のみで提供し、インターネットには公開しない。<code>/dashboard</code> と <code>/dummy/detection</code> は運営端末からのみ開く。
+</p>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>
+mermaid.initialize({ startOnLoad:true, theme:'default', flowchart:{ htmlLabels:true, curve:'basis', nodeSpacing:40, rankSpacing:50, wrappingWidth:420 },
+  themeVariables:{ fontFamily:'"Hiragino Sans","Noto Sans JP",sans-serif', fontSize:'13px' } });
+</script>
+</body></html>

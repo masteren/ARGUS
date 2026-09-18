@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="utf-8">
+<style>
+  body { margin:0; padding:28px 32px 36px; background:#f7f9fc; font-family:"Hiragino Sans","Noto Sans JP",sans-serif; }
+  .title { font-size:20px; font-weight:700; color:#1f2a44; margin:0 0 2px; }
+  .sub { font-size:12.5px; color:#5b6b8c; margin:0 0 18px; }
+  .note { margin-top:18px; font-size:11.5px; color:#5b6b8c; line-height:1.9; border-top:1px solid #d9e0ee; padding-top:10px; }
+  .note b { color:#1f2a44; }
+  #d { display:inline-block; }
+</style>
+</head><body>
+<p class="title">ARGUS ER図（SQLite / argus.db・全4テーブル）</p>
+<p class="sub">体験チケット（模擬通貨）の消費から、ロボット命令の実行完了・ミッション成功までを1本の履歴として追跡できる構造</p>
+<div id="d"><pre class="mermaid">
+erDiagram
+    transactions ||--|| command_queue : "取引1件につき命令1件を発行"
+    transactions ||--o| missions      : "search_person のときだけ生成"
+    command_queue ||--o| missions     : "巡回命令を保持(command_id)"
+    detections   ||--o| missions      : "成功の根拠となった検出(detection_id)"
+
+    transactions {
+        INTEGER id PK "自動採番"
+        TEXT payment_id "模擬決済ID dummy_xxxx"
+        TEXT timestamp "取引日時"
+        INTEGER amount "消費チケット枚数 100/300/500"
+        TEXT action "forward/turn_left/turn_right/bow/wave/search_person"
+        TEXT action_label "前進 / お辞儀 など表示名"
+        TEXT payer_name "利用者名 24文字まで(未入力は匿名)"
+        TEXT message "応援メッセージ 100文字まで"
+        TEXT status "paid"
+        TEXT created_at "登録日時"
+    }
+
+    command_queue {
+        INTEGER id PK "自動採番"
+        INTEGER transaction_id FK "transactions.id"
+        TEXT action "実行する動作コード"
+        TEXT action_label "表示名"
+        TEXT source "発行元。現状は paid のみ（/pay が登録）"
+        TEXT status "pending → done"
+        TEXT created_at "登録日時"
+        TEXT done_at "完了報告を受けた日時"
+    }
+
+    missions {
+        INTEGER id PK "自動採番"
+        INTEGER transaction_id FK "transactions.id"
+        INTEGER command_id "command_queue.id（論理参照）"
+        TEXT action "search_person"
+        TEXT action_label "人を探す"
+        TEXT payer_name "依頼した利用者名"
+        TEXT status "active → success"
+        TEXT created_at "開始日時"
+        TEXT success_at "成功日時"
+        INTEGER detection_id "detections.id（論理参照）"
+    }
+
+    detections {
+        INTEGER id PK "自動採番"
+        TEXT timestamp "検出日時"
+        TEXT type "person / mission_person"
+        REAL confidence "信頼度 0.0〜1.0"
+        TEXT image "静止画ファイル名"
+        TEXT bbox "検出枠 [x1,y1,x2,y2] JSON"
+        TEXT frame_wh "映像解像度 [w,h] JSON"
+        TEXT created_at "登録日時"
+    }
+</pre></div>
+<p class="note">
+<b>主キー</b>：全テーブル <code>id INTEGER PRIMARY KEY AUTOINCREMENT</code>／<b>外部キー制約</b>：<code>command_queue.transaction_id</code>・<code>missions.transaction_id</code> → <code>transactions(id)</code>（CREATE TABLE で宣言）。ただし SQLite は既定で外部キーを強制しないため、実際の整合はアプリ側で保つ。<br>
+<b>論理参照</b>：<code>missions.command_id</code>・<code>missions.detection_id</code> は制約を宣言せず、アプリ側（<code>/pay</code>・<code>/upload</code>）で整合を取る。<br>
+<b>会員テーブルを置かない理由</b>：会員登録・ログインは Ver1.0 のスコープ外。利用者は毎回入力する <code>payer_name</code> で識別し、ランキングは <code>payer_name</code> の合計で集計する。<br>
+<b>金額について</b>：<code>amount</code> は体験チケット（模擬通貨）の枚数であり、実際の金銭は発生しない。実決済へ差し替える場合は <code>transactions.payment_id</code> と <code>status</code> を決済事業者の値に置き換える。
+</p>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>
+mermaid.initialize({ startOnLoad:true, theme:'default', er:{ layoutDirection:'LR', entityPadding:12, fontSize:13 },
+  themeVariables:{ fontFamily:'"Hiragino Sans","Noto Sans JP",sans-serif' } });
+</script>
+</body></html>
