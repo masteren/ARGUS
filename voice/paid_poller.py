@@ -52,13 +52,40 @@ def report_battery_loop(bridge, interval=None):
         time.sleep(interval)
 
 
+def _is_still_pending(command_id):
+    """そのコマンドがまだ未実行のままか（＝取り消されていないか）を B に聞く。
+
+    なぜ要るか：GET /commands で一度に複数件を受け取ると、その一覧は
+    手元のメモリにあるだけで DB の状態とは切り離される。運営が
+    /control の「停止」を押すと B は pending を done に書き換えるが、
+    手元のバッチはそれを知らないので、停止したはずなのに残りの前進が
+    次々に送られてしまう（＝緊急停止として機能しない）。
+    実行の直前にここで確認することで、取り消された分を捨てる。
+    """
+    try:
+        resp = requests.get(f"{B_URL}/commands", timeout=3).json()
+        return command_id in {c["id"] for c in _extract_list(resp, "commands")}
+    except Exception:
+        return True      # 確認できないときは実行する。取りこぼすより良い
+
+
 def poll_paid_commands(bridge, action_replies=None, interval=2):
     print("🎫 チケット命令のポーリング開始...")
     while True:
+        cancelled = False
         try:
             resp = requests.get(f"{B_URL}/commands", timeout=3).json()
             cmds = _extract_list(resp, "commands")
-            for c in cmds:
+            for index, c in enumerate(cmds):
+                # 1件目は取得直後なので確認しない。2件目以降は、前の
+                # コマンドを実行している間（前進なら2秒）に停止が押された
+                # 可能性があるので、送る前に毎回確認する。
+                if index > 0 and not _is_still_pending(c["id"]):
+                    print("🎫 停止により取り消されました。残りのバッチを破棄します",
+                          flush=True)
+                    cancelled = True
+                    break
+
                 action = c["action"]
                 label = c.get("action_label") or c.get("payer_name") or action
                 print(f"🎫 チケット: {label} → {action}")
@@ -66,4 +93,8 @@ def poll_paid_commands(bridge, action_replies=None, interval=2):
                 requests.post(f"{B_URL}/commands/{c['id']}/done", timeout=3)  # 完了報告
         except Exception as e:
             print("[poll]", e)
-        time.sleep(interval)
+
+        # 取り消しを検出したときは待たずに取りに行く。停止コマンド自身が
+        # キューに入っているので、すぐ拾って実際に止まれるようにする。
+        if not cancelled:
+            time.sleep(interval)

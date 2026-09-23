@@ -732,13 +732,17 @@ STAFF_ACTIONS = {
 def staff_is_allowed():
     """運営操作を許すかどうか。
 
-    既定は B を動かしている端末（localhost）だけ。観客と同じLANに置く以上、
-    誰でも叩ける経路にはしない。スタッフのスマホから操作したい場合だけ
-    ARGUS_STAFF_TOKEN を設定し、同じ値を X-Staff-Token ヘッダで送る。
+    **B を動かしている端末（localhost）は常に許可する。** 運営が操作するのは
+    そこなので、ここを塞ぐとダッシュボードのボタンが全部 403 になる。
+    （以前はトークンを設定した途端 localhost にもヘッダを要求していて、
+    ブラウザの fetch はそれを送らないため運営 UI が使えなくなっていた。）
+
+    別の端末からの操作は ARGUS_STAFF_TOKEN を設定したときだけ開く。
+    観客と同じ LAN に置く以上、誰でも叩ける経路にはしない。
     """
-    if STAFF_TOKEN:
-        return request.headers.get("X-Staff-Token") == STAFF_TOKEN
-    return request.remote_addr in ("127.0.0.1", "::1")
+    if request.remote_addr in ("127.0.0.1", "::1"):
+        return True
+    return bool(STAFF_TOKEN) and request.headers.get("X-Staff-Token") == STAFF_TOKEN
 
 
 @app.route("/control", methods=["POST"])

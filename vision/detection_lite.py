@@ -44,6 +44,12 @@ MIN_AREA_RATIO = float(os.environ.get("ARGUS_MIN_AREA", "0.02"))   # 画面比�
 MISSION_TYPE = "mission_person"
 MISSION_POLL = 2.0
 
+# ミッション成功を「動いた塊」でも認めるか。既定は認めない（人だけ）。
+# 低い視点で HOG がどうしても人を取れず、展示で search_person が
+# 一度も成功しない…という場合の逃げ道として用意してあるが、
+# 有効にすると人が居なくてもミッションが完了しうることは承知の上で使うこと。
+MISSION_ACCEPT_MOTION = os.environ.get("ARGUS_MISSION_ACCEPT_MOTION") == "1"
+
 _last_post = 0.0
 _mission_active = False
 _mission_reported = False
@@ -112,8 +118,8 @@ def detect(frame):
     if DETECTOR in ("motion", "auto"):
         found = detect_motion(frame)
         if found:
-            # ミッション中は「人」として上げる。B は mission_ 接頭辞を見て
-            # ミッション成功にするので、種類名はここで決まる。
+            # ラベルは "motion"。これは「動いた」だけで人とは限らないので、
+            # 呼び出し側はミッション成功の判定に使ってはいけない（main 参照）。
             return found[0], found[1], "motion"
 
     return None
@@ -121,8 +127,6 @@ def detect(frame):
 
 # ── B への送信（detection_webcam.py と同じ契約）──────────────
 def send_detection(frame, kind, confidence, bbox):
-    global _mission_reported
-
     ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
     if not ok:
         return False
@@ -172,6 +176,13 @@ def main():
 
     print(f"[detection_lite] 検出方式 = {DETECTOR}", flush=True)
     print(f"[detection_lite] 映像 = {CAMERA_SOURCE}", flush=True)
+    if MISSION_ACCEPT_MOTION:
+        print("[detection_lite] ※ 動体でもミッション成功を認める設定です"
+              "（人が居なくても完了しえます）", flush=True)
+    elif DETECTOR == "motion":
+        print("[detection_lite] ※ motion のみのため search_person は自動成功しません。"
+              "人物判定が要るなら DETECTOR=auto/hog、または "
+              "ARGUS_MISSION_ACCEPT_MOTION=1", flush=True)
 
     cap = cv2.VideoCapture(CAMERA_SOURCE)
     if not cap.isOpened():
@@ -197,7 +208,14 @@ def main():
         if found:
             bbox, conf, label = found
 
-            if _mission_active and not _mission_reported:
+            # ミッション成功にできるのは「人」と判定できたときだけ。
+            # motion（動いた塊）はカメラの揺れやロボット自身の移動でも出るので、
+            # それで成功にすると人が居なくても ¥500 のミッションが完了してしまう。
+            # B は type が mission_ で始まる /upload を無条件で成功扱いにするため、
+            # ここで絞らないと歯止めが無い。
+            mission_ok = label == "person" or MISSION_ACCEPT_MOTION
+
+            if _mission_active and not _mission_reported and mission_ok:
                 # ミッション中は throttle せず即送る。成功したときだけ
                 # 「報告済み」にする（失敗したら次のフレームで再挑戦）。
                 _mission_reported = send_detection(frame, MISSION_TYPE, conf, bbox)
