@@ -137,6 +137,9 @@ python3 vision/detection_webcam.py
 | その場旋回しない／脱力から復帰しない | `control.py` のパッチが当たっていない。`python3 tools/patch_freenove_server.py --check` で確認 |
 | 前進が止まらず歩き続ける | C が古い。`robot_bridge.py` が動作後に停止コマンドを送る版か確認（`ARGUS_MOVE_SECONDS` 秒で自動停止する） |
 | 命令は届くのに脚が動かない | ロボット側の問題。Pi で `sudo python3 test.py Servo`（サーボ単体）と `sudo python3 test.py ADC`（電圧、7V以上必要）を確認 |
+| 途中から何を押しても動かなくなった（Pi のログに `OSError: [Errno 121] Remote I/O error`） | **電源不足でサーボドライバ（PCA9685）が I2C から落ちた。** 歩行中の電圧降下で起きる（`dmesg` に `Undervoltage detected!`）。ロボットの電源スイッチを切って5秒待って入れ直す。サービスは5秒ごとに自動で再起動を試みるので、Pi には触らなくてよい。根本対策は 5V/5A アダプタと満充電 |
+| `freenove.service` が起動しない（`Unit ... could not be found`） | サービス未登録。上の「電源を入れるだけで立ち上がるようにする」を実行する |
+| search_person が成功しない／枠が motion しか出ない | カメラが低すぎる。`/dashboard` の「▲ カメラを上に」で調整し、C のログに出る角度を `ARGUS_HEAD_TILT` に設定する。A のログに `[detection_lite] … fps` が出ていなければ A が落ちている（`opencv-python<5` か確認） |
 | 映像がカクつく | `/video_feed` は MJPEG。同時視聴が増えるほど落ちる。観客端末は1台に絞る |
 | B が 5000 を開けない | macOS は AirPlay が 5000 を使う → `--port 5001` |
 
@@ -147,7 +150,7 @@ python3 vision/detection_webcam.py
 | ページ | `/`（公開ページ） | `/dashboard` の「直接操作（運営用）」 |
 | 経路 | `/pay` → チケット消費 | `/control` → **チケット不要** |
 | 記録 | 取引履歴・ランキングに載る | **載らない**（集計が汚れない） |
-| 使える動作 | forward / turn_left / turn_right / bow / wave / search_person | ＋ **back / stop / relax** |
+| 使える動作 | forward / turn_left / turn_right / bow / wave / search_person | ＋ **back / stop / relax / head_up / head_down** |
 | 連打制限 | 1.5秒 | なし |
 
 運営側は**開演前の動作確認・ロボットの立て直し・緊急停止**に使う。観客に買わせた

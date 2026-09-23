@@ -33,16 +33,17 @@ ROOT = Path(__file__).resolve().parent.parent
 procs = []
 
 
-def start(name, script, cwd, env, critical=False):
+def start(name, script, cwd, env, critical=False, lost=""):
     """子プロセスを1つ起動して記録する。
 
     critical=True は「これが死んだら全部畳む」もの（＝B だけ）。
     C や A が死んでも B は生かす：展示中にロボットが一瞬落ちただけで
     観客のページまで消えるのは最悪なので。
+    lost は、それが死んだときに何が止まるのかを運営に伝える一文。
     """
     print(f"▶ {name} を起動: {script.relative_to(ROOT)}", flush=True)
     p = subprocess.Popen([sys.executable, str(script)], cwd=str(cwd), env=env)
-    procs.append([name, p, critical])
+    procs.append([name, p, critical, script, lost])
     return p
 
 
@@ -95,7 +96,7 @@ def wait_for_backend(url, timeout=25.0):
 
     deadline = time.time() + timeout
     while time.time() < deadline:
-        for _, p, _c in procs:
+        for _, p, *_rest in procs:
             if p.poll() is not None:
                 return False          # B が落ちたなら待つ意味がない
         try:
@@ -109,12 +110,12 @@ def wait_for_backend(url, timeout=25.0):
 
 def shutdown(*_):
     print("\n■ 終了します...", flush=True)
-    for name, p, _c in reversed(procs):
+    for name, p, *_rest in reversed(procs):
         if p.poll() is None:
             print(f"  停止: {name}", flush=True)
             p.terminate()
     deadline = time.time() + 5
-    for _, p, _c in procs:
+    for _, p, *_rest in procs:
         remaining = max(0, deadline - time.time())
         try:
             p.wait(timeout=remaining)
@@ -163,8 +164,8 @@ def main():
     if not check_port(args.port):
         return 1
 
-    # ── B（後端＋Web＋映像配信）──
-    start("B 後端", ROOT / "ARGUS_backend" / "app.py", ROOT / "ARGUS_backend", env,
+    # ── B（バックエンド＋Web＋映像配信）──
+    start("B バックエンド", ROOT / "ARGUS_backend" / "app.py", ROOT / "ARGUS_backend", env,
           critical=True)
 
     if not wait_for_backend(b_url):
@@ -175,7 +176,8 @@ def main():
 
     # ── C（チケット命令 → ロボット）──
     c_script = "argus_voice.py" if args.voice else "paid_only.py"
-    start("C ブリッジ", ROOT / "voice" / c_script, ROOT / "voice", env)
+    start("C ブリッジ", ROOT / "voice" / c_script, ROOT / "voice", env,
+          lost="ロボットへの命令だけが止まっています。")
 
     # ── A（画像認識）──
     # ultralytics（YOLO）が入っていれば本命の detection_webcam.py、無ければ
@@ -190,7 +192,8 @@ def main():
         if not has_yolo:
             print("  （ultralytics 未導入のため軽量版 detection_lite.py を使います）",
                   flush=True)
-        start("A 画像認識", ROOT / "vision" / a_script, ROOT / "vision", env)
+        start("A 画像認識", ROOT / "vision" / a_script, ROOT / "vision", env,
+              lost="画像認識だけが止まっています（枠の表示と search_person の成功判定）。")
 
     if not args.no_browser:
         time.sleep(1.5)
@@ -207,7 +210,7 @@ def main():
     reported = set()
     try:
         while True:
-            for name, p, critical in procs:
+            for name, p, critical, script, lost in procs:
                 if p.poll() is None:
                     continue
 
@@ -222,12 +225,13 @@ def main():
                     print("！" * 28, flush=True)
                     print(f"！ {name} が終了しました (exit={p.returncode})", flush=True)
                     print("！ B と観客ページは動き続けています。", flush=True)
-                    print("！ ロボットへの命令だけが止まっています。", flush=True)
-                    print("！ Pi 側を確認したら、別の端末でこれだけ起動し直せます：",
+                    print(f"！ {lost}", flush=True)
+                    print("！ 原因を確認したら、別の端末でこれだけ起動し直せます：",
                           flush=True)
-                    print(f"！   cd {ROOT / 'voice'}", flush=True)
-                    print(f"！   ARGUS_ROBOT_HOST={args.robot or '<PiのIP>'} "
-                          f"{Path(sys.executable).name} {c_script}", flush=True)
+                    print(f"！   cd {script.parent}", flush=True)
+                    robot_env = (f"ARGUS_ROBOT_HOST={args.robot} " if args.robot else "")
+                    print(f"！   {robot_env}PORT={args.port} "
+                          f"{Path(sys.executable).name} {script.name}", flush=True)
                     print("！" * 28, flush=True)
                     print("", flush=True)
             time.sleep(1)

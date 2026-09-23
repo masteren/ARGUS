@@ -1,6 +1,7 @@
 *.wav
 __pycache__/
 .DS_Store
+.venv/
 
 # 本番DBと、テストが作る使い捨てDB・ログをまとめて除外
 ARGUS_backend/argus*.db
