@@ -52,6 +52,15 @@
                     <span>NETWORK</span>
                     <strong>LAN READY</strong>
                 </p>
+                <!-- 電圧は C が CMD_POWER で取って B に置いたものを読む -->
+                <p class="battery-row">
+                    <span>BATTERY</span>
+                    <strong id="battery-text">---</strong>
+                </p>
+                <div class="battery-bar" id="battery-bar" hidden>
+                    <div class="battery-fill" id="battery-fill"></div>
+                </div>
+                <p class="battery-detail" id="battery-detail"></p>
             </div>
         </div>
 
@@ -321,6 +330,46 @@ function pollOverlay() {
 window.addEventListener("resize", resizeHud);
 resizeHud();
 setInterval(pollOverlay, POLL_INTERVAL_MS);
+
+// ── バッテリー表示 ──────────────────────────────
+// 電圧を知れるのは 5002 を握っている C だけ。C が定期的に B へ置き、
+// ここはその最新値を読むだけ。C が落ちていれば値が古くなるので、
+// 古すぎるときは「---」に戻して嘘を表示しないようにする。
+const BATTERY_POLL_MS = 5000;
+const BATTERY_STALE_SEC = 60;
+
+const batText = document.getElementById("battery-text");
+const batBar = document.getElementById("battery-bar");
+const batFill = document.getElementById("battery-fill");
+const batDetail = document.getElementById("battery-detail");
+
+function pollBattery() {
+    fetch("/battery", { cache: "no-store" })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.ok || !data.available || data.age_sec > BATTERY_STALE_SEC) {
+                batText.textContent = "---";
+                batText.className = "";
+                batBar.hidden = true;
+                batDetail.textContent = data.available ? "情報が古い" : "";
+                return;
+            }
+
+            batText.textContent = data.level + "%";
+            batText.className = "bat-" + data.status;
+            batBar.hidden = false;
+            batFill.style.width = data.level + "%";
+            batFill.className = "battery-fill bat-" + data.status;
+            // サーボ側とラズパイ側の2系統があるので両方出す
+            batDetail.textContent = `負荷 ${data.load}V / Pi ${data.pi}V`;
+        })
+        .catch(() => {
+            // B が一時的に落ちても表示ループは止めない
+        });
+}
+
+pollBattery();
+setInterval(pollBattery, BATTERY_POLL_MS);
 </script>
 
 </body>

@@ -2,11 +2,14 @@
 __pycache__/
 .DS_Store
 
-ARGUS_backend/argus.db
-ARGUS_backend/argus.smoketest.db
-ARGUS_backend/argus.smoketest.log
+# 本番DBと、テストが作る使い捨てDB・ログをまとめて除外
+ARGUS_backend/argus*.db
+ARGUS_backend/argus*.db-wal
+ARGUS_backend/argus*.db-shm
+ARGUS_backend/argus*.log
 
 vision/yolov8n.pt
+vision/yolov8n_ncnn_model/
 
 # 学校配布のサンプル（他チームの成果物なので公開リポジトリに入れない）
 *_sample.png

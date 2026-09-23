@@ -5,6 +5,7 @@
 #   使える命令はこれだけ：CMD_MOVE / CMD_ATTITUDE(±15) / CMD_POSITION / CMD_HEAD / CMD_BUZZER / CMD_RELAX / CMD_BALANCE
 #   （CMD_WAVE のような専用「動作」命令は存在しない → wave/bow はこれらを組み合わせたジェスチャで作る）
 
+import os
 import socket
 import threading
 import time
@@ -20,33 +21,112 @@ class MockBridge(RobotBridge):
     def send(self, action: str, **kwargs):
         print(f"🦿 [MOCK] robot <- {action} {kwargs}")
 
+    def query_power(self, timeout=2.0):
+        """実機なしでも電圧表示の経路を通せるよう、それらしい値を返す。"""
+        return 7.6, 7.8
+
 
 # ② 実機用：Freenove サーバー（ポート 5002）に接続し、公式コマンド文字列を送信する
 class FreenoveBridge(RobotBridge):
     SPEED = 8          # 速度段階 2~10。8 は中速
     GAIT = "1"         # 歩容モード 1 または 2
 
+    RECONNECT_MIN_INTERVAL = 2.0   # 失敗直後に毎回繋ぎ直しに行かないための間隔（秒）
+    CONNECT_TIMEOUT = 3.0          # Pi が落ちているとき connect で長く固まらないように
+
     def __init__(self, host, port=5002):
         self.host = host
         self.port = port
         self.lock = threading.Lock()   # 音声スレッド/チケットスレッドが同時に socket へ書き込む競合を防ぐ
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.sock.connect((host, port))   # host = Pi の wlan0 IP（同一機での統合なら 127.0.0.1 でも可）
+        self.sock = None
+        self._last_attempt = 0.0
+        self._warned = False
+
+        # 起動時に一度繋ぎに行くが、**失敗しても例外にしない**。
+        # 以前はここで connect が落ちると C のプロセスごと死に、run_all.py が
+        # 巻き添えで B まで止めていた（＝展示中に Pi が一瞬落ちると観客ページごと消える）。
+        # 今は未接続のまま起動し、命令のたびに繋ぎ直す。
+        self._ensure_connected()
+
+    # ── 接続管理 ──────────────────────────────
+    def _ensure_connected(self):
+        """繋がっていれば True。切れていれば繋ぎ直しを試みる。"""
+        if self.sock is not None:
+            return True
+
+        now = time.time()
+        if now - self._last_attempt < self.RECONNECT_MIN_INTERVAL:
+            return False          # 直前に失敗したばかり。毎回待たされないよう見送る
+        self._last_attempt = now
+
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(self.CONNECT_TIMEOUT)
+            sock.connect((self.host, self.port))   # host = Pi の wlan0 IP（同一機なら 127.0.0.1 でも可）
+            sock.settimeout(None)
+            self.sock = sock
+            self._warned = False
+            print(f"🦿 [REAL] robot 接続成功 {self.host}:{self.port}", flush=True)
+            return True
+        except OSError as e:
+            if not self._warned:
+                # 繋がらない間は毎回吠えない。復旧したら上の行が出る。
+                print(
+                    f"🦿 [REAL] robot に接続できません（{self.host}:{self.port} / {e}）。"
+                    "Pi で `sudo python3 main.py -t -n` が動いているか確認してください。"
+                    "接続できるまで命令は捨てられます（Bとページは動き続けます）。",
+                    flush=True,
+                )
+                self._warned = True
+            return False
+
+    def _drop_socket(self):
+        try:
+            if self.sock is not None:
+                self.sock.close()
+        except OSError:
+            pass
+        self.sock = None
 
     # ── 低レベル送信 ──────────────────────────────
     def _raw(self, cmd: str):
-        self.sock.sendall(cmd.encode("utf-8"))
+        """送れたら True。未接続・送信失敗なら False（例外は投げない）。"""
+        if not self._ensure_connected():
+            return False
+        try:
+            self.sock.sendall(cmd.encode("utf-8"))
+            return True
+        except OSError as e:
+            print(f"🦿 [REAL] 送信失敗（{e}）。次の命令で繋ぎ直します。", flush=True)
+            self._drop_socket()
+            return False
 
     def _move(self, x=0, y=0, angle=0):
         # CMD_MOVE#歩容#x#y#速度#旋回角  （control.py の run_gait 例と一致）
         return f"CMD_MOVE#{self.GAIT}#{x}#{y}#{self.SPEED}#{angle}\n"
 
-    # ── 単発コマンド ──────────────────────────────
+    # ── 時間制限つき移動 ──────────────────────────
+    # 【重要】Freenove の control.py は CMD_MOVE をキューに残したまま繰り返し実行する。
+    # 公式クライアントは「キーを押している間だけ歩き、離したら停止コマンドを送る」
+    # 前提なので、それで辻褄が合っている（Main.py の keyReleaseEvent）。
+    # ARGUS は「チケット1枚＝コマンド1回」で"離す"操作が存在しないため、
+    # 素直に送ると **止まらずに歩き続ける**（実機で確認済み）。
+    # そこでここが「離す」役をやる：一定時間動かしてから停止コマンドを送る。
+    # control.py 側は x=y=angle=0 を受けるとキューを空にするので、そこで止まる。
+    MOVE_SECONDS = float(os.environ.get("ARGUS_MOVE_SECONDS", "2.0"))   # 前進・後退
+    TURN_SECONDS = float(os.environ.get("ARGUS_TURN_SECONDS", "1.5"))   # 旋回
+
+    MOVES = {
+        "forward":    (dict(y=35),      MOVE_SECONDS),
+        "back":       (dict(y=-35),     MOVE_SECONDS),
+        # 符号は実機で確認済み（2026-09）。CMD_MOVE の angle は
+        # 正 = 右回り / 負 = 左回り。CONTRACT.md の残タスク③はこれで解決。
+        "turn_left":  (dict(angle=-10), TURN_SECONDS),
+        "turn_right": (dict(angle=10),  TURN_SECONDS),
+    }
+
+    # ── 単発コマンド（送って終わり）────────────────
     SIMPLE = {
-        "forward":    lambda s: s._move(y=35),
-        "back":       lambda s: s._move(y=-35),
-        "turn_left":  lambda s: s._move(angle=10),    # ※左右の符号は実機で入れ替えが必要な場合あり
-        "turn_right": lambda s: s._move(angle=-10),
         "stop":       lambda s: s._move(),            # すべて0 = 起立/停止
         "relax":      lambda s: "CMD_RELAX\n",
     }
@@ -80,18 +160,84 @@ class FreenoveBridge(RobotBridge):
 
     def send(self, action: str, **kwargs):
         with self.lock:
-            if action in self.SIMPLE:
+            if action in self.MOVES:
+                params, seconds = self.MOVES[action]
+                cmd = self._move(**params)
+                if not self._raw(cmd):
+                    print(f"🦿 [SKIP] 未接続のため破棄: {action}", flush=True)
+                    return
+                print(f"🦿 [REAL] robot <- {action} :: {cmd.strip()} ({seconds}秒)",
+                      flush=True)
+                time.sleep(seconds)
+                # ここが公式クライアントの「キーを離す」に相当する。
+                # これを送らないと control.py がキューに命令を残したまま歩き続ける。
+                self._raw(self._move())
+                print(f"🦿 [REAL] robot <- stop :: {action} 終了", flush=True)
+            elif action in self.SIMPLE:
                 cmd = self.SIMPLE[action](self)
-                self._raw(cmd)
-                print(f"🦿 [REAL] robot <- {action} :: {cmd.strip()}")
+                # 送れたときだけ「送った」と出す。未接続なのに成功したように
+                # 見えると、ロボットが動かない原因を追えなくなる。
+                if self._raw(cmd):
+                    print(f"🦿 [REAL] robot <- {action} :: {cmd.strip()}", flush=True)
+                else:
+                    print(f"🦿 [SKIP] 未接続のため破棄: {action}", flush=True)
             elif action in self.GESTURES:
-                print(f"🦿 [REAL] robot <- {action} (gesture)")
+                # ジェスチャは複数コマンドの連続。1発目が通らないなら諦める
+                # （途中まで送って変な姿勢で止まるのを避ける）。
+                if not self._ensure_connected():
+                    print(f"🦿 [SKIP] 未接続のため破棄: {action}", flush=True)
+                    return
+                print(f"🦿 [REAL] robot <- {action} (gesture)", flush=True)
                 self.GESTURES[action](self)
             else:
-                print(f"[WARN] unknown action: {action}")
+                print(f"[WARN] unknown action: {action}", flush=True)
+
+    # ── 電圧の問い合わせ ──────────────────────────
+    def query_power(self, timeout=2.0):
+        """バッテリー電圧を聞く。(負荷側, Pi側) のタプル、取れなければ None。
+
+        Freenove の server.py は CMD_POWER を受けると
+            CMD_POWER#7.71#7.82\\n
+        を返す（adc.read_battery_voltage の2値）。応答を返すコマンドは
+        CMD_POWER と CMD_SONIC だけなので、ここで読めるのはほぼ電圧行だが、
+        混ざっても困らないよう行ごとに見て CMD_POWER だけ拾う。
+
+        送信と受信を lock の中でまとめて行う。そうしないと別スレッドの
+        移動コマンドが間に割り込み、応答の対応関係が崩れる。
+        """
+        with self.lock:
+            if not self._raw("CMD_POWER\n"):
+                return None
+
+            deadline = time.time() + timeout
+            buf = ""
+            try:
+                self.sock.settimeout(timeout)
+                while time.time() < deadline:
+                    chunk = self.sock.recv(1024).decode("utf-8", errors="replace")
+                    if not chunk:
+                        self._drop_socket()
+                        return None
+                    buf += chunk
+                    for line in buf.split("\n"):
+                        parts = line.strip().split("#")
+                        if parts[0] == "CMD_POWER" and len(parts) >= 3:
+                            try:
+                                return float(parts[1]), float(parts[2])
+                            except ValueError:
+                                pass
+            except (OSError, socket.timeout):
+                return None
+            finally:
+                try:
+                    if self.sock is not None:
+                        self.sock.settimeout(None)
+                except OSError:
+                    pass
+        return None
 
     def close(self):
-        self.sock.close()
+        self._drop_socket()
 
 
 # ───────── 使い方 ─────────

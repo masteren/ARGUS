@@ -15,8 +15,13 @@ requests>=2.31
 
 # ── 担当A：画像認識（B のカメラ配信を読む側でも cv2 が要る）──
 opencv-python>=4.8
-ultralytics>=8.2
 numpy>=1.24
+
+# YOLO 版（vision/detection_webcam.py）を使う場合だけ。PyTorch を巻き込んで
+# 2〜3GB あるので、環境によっては入らない。入れなくても
+# vision/detection_lite.py（OpenCV 内蔵の検出器）で枠は出せる。
+# tools/run_all.py --vision は ultralytics の有無を見て自動で使い分ける。
+ultralytics>=8.2
 
 # ── 担当C：音声対話（マイク・スピーカー・OpenAI API）────────
 # 実行前に環境変数 OPENAI_API_KEY を設定すること。
