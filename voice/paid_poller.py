@@ -69,6 +69,24 @@ def _is_still_pending(command_id):
         return True      # 確認できないときは実行する。取りこぼすより良い
 
 
+def _search_should_stop():
+    """search_person の巡回を途中でやめるべきか。
+
+    ・ミッションがもう active でない（A が人を見つけて success になった）
+    ・運営が停止を押した（staff の stop が pending に入っている）
+    巡回は十数秒かかり、その間 bridge の lock を握るので、ここで見ないと
+    停止ボタンが巡回の終わりまで効かない（CLAUDE.md の「緊急停止」と同じ理由）。
+    B に聞けないときは続ける。
+    """
+    try:
+        if not requests.get(f"{B_URL}/mission/active", timeout=2).json().get("active"):
+            return True
+        resp = requests.get(f"{B_URL}/commands", timeout=2).json()
+        return any(c.get("action") == "stop" for c in _extract_list(resp, "commands"))
+    except Exception:
+        return False
+
+
 def poll_paid_commands(bridge, action_replies=None, interval=2):
     print("🎫 チケット命令のポーリング開始...")
     while True:
@@ -89,7 +107,10 @@ def poll_paid_commands(bridge, action_replies=None, interval=2):
                 action = c["action"]
                 label = c.get("action_label") or c.get("payer_name") or action
                 print(f"🎫 チケット: {label} → {action}")
-                bridge.send(action, paid=True)                       # ロボットを動かす
+                if action == "search_person":
+                    bridge.send(action, paid=True, should_stop=_search_should_stop)
+                else:
+                    bridge.send(action, paid=True)                   # ロボットを動かす
                 requests.post(f"{B_URL}/commands/{c['id']}/done", timeout=3)  # 完了報告
         except Exception as e:
             print("[poll]", e)

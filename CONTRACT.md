@@ -39,6 +39,10 @@
 | `ARGUS_STAFF_TOKEN` | 未設定 | `/control`（運営の直接操作）を別端末から使うための合言葉。未設定なら localhost のみ |
 | `ARGUS_MOVE_SECONDS` | `2.0` | 前進・後退が続く秒数。この後 bridge が自動で停止を送る |
 | `ARGUS_TURN_SECONDS` | `1.5` | 旋回が続く秒数。会場の広さに合わせて調整する |
+| `ARGUS_SEARCH_STEPS` | `6` | search_person の巡回で「回る→止まって見る」を繰り返す回数。人が見つかるか運営が停止を押せば途中で終わる |
+| `ARGUS_SEARCH_TURN_SECONDS` | `2.0` | 巡回1回あたり回る秒数。実測約15度/秒なので既定で1回約30度・全体で約180度 |
+| `ARGUS_SEARCH_LOOK_SECONDS` | `1.5` | 巡回1回あたり止まって見る秒数（HOG は歩行中のブレた画では人を取れない） |
+| `ARGUS_HEAD_TILT` | `90` | カメラ（頭）の上下角度。C が Pi に繋ぐたびにこの角度へ合わせる。50〜180 |
 | `ARGUS_BATTERY_INTERVAL` | `10` | C がロボットに電圧を聞きに行く間隔（秒） |
 | `ARGUS_MISSION_ACCEPT_MOTION` | 未設定 | `1` にすると動体検出でも search_person を成功にする。**人が居なくても完了しうる**ので、HOG がどうしても取れないときの最後の手段 |
 
@@ -90,7 +94,11 @@ B は `ARGUS_DB` で使い捨てDBも指定できる（未設定なら `ARGUS_ba
 載らない**（`command_queue` に `source='staff'`、`transaction_id=NULL` で積むだけ）。
 C から見れば `/commands` に出てくる普通の命令なので、**C と A は変更不要**。
 
-使える action：`forward` `back` `turn_left` `turn_right` `stop` `relax` `bow` `wave`
+使える action：`forward` `back` `turn_left` `turn_right` `stop` `relax` `bow` `wave` `head_up` `head_down`
+
+`head_up` / `head_down` はカメラ（頭のサーボ 0 番）を10度ずつ上下させる（`CMD_HEAD#0#角度`、50〜180）。
+低い視点では人の全身が入らず search_person が成功しないので、現場で合わせてから
+C のログに出る角度を `ARGUS_HEAD_TILT` に設定すると、次回から接続時にその角度になる。
 
 - **`stop` は未実行キューを空にしてから停止する。** そうしないと溜まった前進が
   後から動き出し、止めたはずのロボットが暴れる。緊急停止として使えるようにした。

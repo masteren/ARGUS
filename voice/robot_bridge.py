@@ -34,9 +34,23 @@ class FreenoveBridge(RobotBridge):
     RECONNECT_MIN_INTERVAL = 2.0   # 失敗直後に毎回繋ぎ直しに行かないための間隔（秒）
     CONNECT_TIMEOUT = 3.0          # Pi が落ちているとき connect で長く固まらないように
 
+    # ── 頭（カメラ）の上下 ──────────────────────────
+    # カメラは頭に付いていて、頭の上下はサーボ 0 番（CMD_HEAD#0#角度）。
+    # 範囲は公式クライアント Main.py のスライダーと同じ 50〜180、既定 90。
+    # （Freenove の protocol.md は「0=水平, -90〜90」と書いているが、実際に動く
+    #   Main.py と server.py は 0=上下・0〜180 の生角度。こちらに合わせる）
+    # 6脚の低い視点では人の全身が入らず HOG が取れないので、上に向けて使う。
+    # 接続のたびに ARGUS_HEAD_TILT の角度へ合わせ直す（Pi 再起動で 90 に戻るため）。
+    HEAD_CHANNEL = 0
+    HEAD_MIN, HEAD_MAX = 50, 180
+    HEAD_STEP = 10
+    # 角度を増やす = 上を向く（2026-09-23 実機で確認済み）。勝手に入れ替えないこと。
+    HEAD_UP_SIGN = 1
+
     def __init__(self, host, port=5002):
         self.host = host
         self.port = port
+        self.head_angle = self._clamp_head(int(os.environ.get("ARGUS_HEAD_TILT", "90")))
         self.lock = threading.Lock()   # 音声スレッド/チケットスレッドが同時に socket へ書き込む競合を防ぐ
         self.sock = None
         self._last_attempt = 0.0
@@ -67,6 +81,11 @@ class FreenoveBridge(RobotBridge):
             self.sock = sock
             self._warned = False
             print(f"🦿 [REAL] robot 接続成功 {self.host}:{self.port}", flush=True)
+            # 頭の角度を合わせ直す。失敗しても接続自体は生かす（次の命令で気づく）。
+            try:
+                sock.sendall(self._head_cmd().encode("utf-8"))
+            except OSError:
+                pass
             return True
         except OSError as e:
             if not self._warned:
@@ -125,10 +144,26 @@ class FreenoveBridge(RobotBridge):
         "turn_right": (dict(angle=10),  TURN_SECONDS),
     }
 
+    def _clamp_head(self, angle):
+        return max(self.HEAD_MIN, min(self.HEAD_MAX, angle))
+
+    def _head_cmd(self):
+        return f"CMD_HEAD#{self.HEAD_CHANNEL}#{self.head_angle}\n"
+
+    def _tilt_head(self, direction):
+        """direction=+1 で上、-1 で下へ1段。新しい角度の CMD_HEAD を返す。"""
+        self.head_angle = self._clamp_head(
+            self.head_angle + direction * self.HEAD_UP_SIGN * self.HEAD_STEP)
+        print(f"🦿 [REAL] カメラ角度 = {self.head_angle}"
+              f"（次回から固定するなら ARGUS_HEAD_TILT={self.head_angle}）", flush=True)
+        return self._head_cmd()
+
     # ── 単発コマンド（送って終わり）────────────────
     SIMPLE = {
         "stop":       lambda s: s._move(),            # すべて0 = 起立/停止
         "relax":      lambda s: "CMD_RELAX\n",
+        "head_up":    lambda s: s._tilt_head(+1),
+        "head_down":  lambda s: s._tilt_head(-1),
     }
 
     # ── ジェスチャ（複数コマンドの連続。lock を保持したまま実行し、途中で音声/チケット命令が割り込まないようにする）──
@@ -144,12 +179,33 @@ class FreenoveBridge(RobotBridge):
             self._raw("CMD_ATTITUDE#0#0#-12\n"); time.sleep(0.4)
         self._raw("CMD_ATTITUDE#0#0#0\n")
 
-    def _gesture_search(self):
-        # 【search_person ミッションの "移動" 部分】その場でゆっくり旋回して周囲を見回す。
+    # search_person の巡回：「少し回る → 止まって見る」を繰り返す。
+    # 以前は 1秒×3回 回るだけで、実機では約45度しか向きが変わらず
+    # 「押しても探していない」ように見えた（2026-09-23 実機）。
+    # 実測でおよそ 15度/秒（angle=10, SPEED=8）。既定の 2秒×6回 で約180度。
+    # 止まる時間を挟むのは、HOG が歩行中のブレた画では人を取れないのと、
+    # サーボに休みを与えて電圧降下（Pi の Undervoltage）を和らげるため。
+    SEARCH_STEPS = int(os.environ.get("ARGUS_SEARCH_STEPS", "6"))
+    SEARCH_TURN_SECONDS = float(os.environ.get("ARGUS_SEARCH_TURN_SECONDS", "2.0"))
+    SEARCH_LOOK_SECONDS = float(os.environ.get("ARGUS_SEARCH_LOOK_SECONDS", "1.5"))
+
+    def _gesture_search(self, should_stop=None):
+        # 【search_person ミッションの "移動" 部分】その場で旋回して周囲を見回す。
         # 成功判定は A と B が担う：A が `/mission/active` を見て人物を `mission_person` で
         # 上げ、B が missions を success にする（接続済み）。ここは C の巡回モーションのみ。
-        for _ in range(3):
-            self._raw(self._move(angle=10)); time.sleep(1.0)
+        #
+        # should_stop() が True を返したら途中でやめる（人が見つかった／運営が停止を
+        # 押した）。これが無いと巡回の間ずっと lock を握るので、停止ボタンが
+        # 巡回の終わりまで効かない。
+        for step in range(self.SEARCH_STEPS):
+            if should_stop is not None and should_stop():
+                print(f"🦿 [REAL] search_person 巡回を {step}/{self.SEARCH_STEPS} で終了",
+                      flush=True)
+                break
+            self._raw(self._move(angle=10))
+            time.sleep(self.SEARCH_TURN_SECONDS)
+            self._raw(self._move())   # 止まって見る
+            time.sleep(self.SEARCH_LOOK_SECONDS)
         self._raw(self._move())   # 停止
 
     GESTURES = {
@@ -188,7 +244,10 @@ class FreenoveBridge(RobotBridge):
                     print(f"🦿 [SKIP] 未接続のため破棄: {action}", flush=True)
                     return
                 print(f"🦿 [REAL] robot <- {action} (gesture)", flush=True)
-                self.GESTURES[action](self)
+                if action == "search_person":
+                    self._gesture_search(should_stop=kwargs.get("should_stop"))
+                else:
+                    self.GESTURES[action](self)
             else:
                 print(f"[WARN] unknown action: {action}", flush=True)
 
