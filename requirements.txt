@@ -14,7 +14,9 @@ Flask>=3.0
 requests>=2.31
 
 # ── 担当A：画像認識（B のカメラ配信を読む側でも cv2 が要る）──
-opencv-python>=4.8
+# OpenCV 5 は HOG（cv2.HOGDescriptor）を本体から外したため、detection_lite.py の
+# 人物検出が動かず A が起動直後に落ちる（2026-09 に Mac の新規環境で発生）。4.x に留める。
+opencv-python>=4.8,<5
 numpy>=1.24
 
 # YOLO 版（vision/detection_webcam.py）を使う場合だけ。PyTorch を巻き込んで

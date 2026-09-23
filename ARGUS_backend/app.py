@@ -361,7 +361,7 @@ def generate_camera_frames():
 def video_feed():
     if cv2 is None:
         return (
-            "OpenCVがインストールされていません。pip install opencv-python を実行してください。",
+            "OpenCVがインストールされていません。pip install 'opencv-python<5' を実行してください。",
             500,
         )
 

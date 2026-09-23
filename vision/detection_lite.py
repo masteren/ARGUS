@@ -15,7 +15,8 @@
 #            6脚ロボットの低い視点では人の全身が入らず外しやすい。
 #   motion : 背景差分で「動いたもの」を囲む。視点を選ばず必ず何か出る。
 #            ただしロボット自身が歩くと画面全体が動くので、その間は止める。
-#   auto   : 既定。hog を試し、取れなければ motion で拾う。
+#   face   : OpenCV 同梱の顔検出（正面＋横顔）。近くで覗き込む観客を取れる。
+#   auto   : 既定。face → hog → motion の順に試す。face と hog は "person"。
 #
 # 使い方：
 #   python3 detection_lite.py
@@ -57,8 +58,17 @@ _last_mission_poll = 0.0
 
 
 # ── 検出器 ────────────────────────────────────────────────
-hog = cv2.HOGDescriptor()
-hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
+# OpenCV 5 は HOG を本体から外した。ここで落ちると A ごと消えて枠も出なくなるので、
+# 無ければ motion だけで動かし、人物判定ができないことをはっきり言う。
+# （requirements.txt で opencv-python<5 に留めてあるので、通常はここを通らない）
+if hasattr(cv2, "HOGDescriptor"):
+    hog = cv2.HOGDescriptor()
+    hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
+else:
+    hog = None
+    print("！ この OpenCV（%s）には HOG がありません。人物検出ができないので"
+          " search_person は成功しません。→ pip install \"opencv-python<5\""
+          % cv2.__version__, flush=True)
 
 # history を短めにして、ロボットが止まった直後から使えるようにする
 bg = cv2.createBackgroundSubtractorMOG2(history=200, varThreshold=40,
@@ -67,6 +77,8 @@ bg = cv2.createBackgroundSubtractorMOG2(history=200, varThreshold=40,
 
 def detect_hog(frame):
     """OpenCV 内蔵の歩行者検出。(bbox, confidence) か None。"""
+    if hog is None:
+        return None
     # 検出は縮小画像で行う（そのままだと遅い）。座標は後で戻す。
     scale = 320 / frame.shape[1]
     small = cv2.resize(frame, None, fx=scale, fy=scale)
@@ -75,10 +87,52 @@ def detect_hog(frame):
     if len(rects) == 0:
         return None
 
+    # weights の形は OpenCV の版で違う（古い版は (N,1)、4.x の新しい版は (N,)）。
+    # 以前は weights[best][0] と決め打ちしていて、人を初めて検出した瞬間に
+    # IndexError で A ごと落ちていた（2026-09-23 実機）。平らにしてから使う。
+    weights = np.asarray(weights, dtype=float).ravel()
     best = int(np.argmax(weights))
     x, y, w, h = (int(v / scale) for v in rects[best])
-    conf = float(min(1.0, max(0.0, weights[best][0] / 2.0)))
+    conf = float(min(1.0, max(0.0, weights[best] / 2.0)))
     return [x, y, x + w, y + h], conf
+
+
+# 顔検出（OpenCV 同梱の Haar カスケード。追加のダウンロード不要）。
+# 6脚の低い視点では、観客はロボットを覗き込むので「頭と肩だけ」が下から写る。
+# HOG は立った全身しか取れないのでこの画では永遠に取れない（2026-09-23 実機）。
+# 下からのあおりでは正面顔より横顔カスケードの方が当たったので両方使う。
+# 横顔カスケードは片向き専用なので、左右反転した画でも回す。
+FACE_UPSCALE = 2.0      # 400x300 の映像では顔が小さいので拡大してから探す
+_face_cascades = [
+    cv2.CascadeClassifier(cv2.data.haarcascades + name)
+    for name in ("haarcascade_frontalface_default.xml", "haarcascade_profileface.xml")
+]
+
+
+def detect_face(frame):
+    """顔を探す。(bbox, confidence) か None。bbox は元の画の座標。"""
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    gray = cv2.resize(gray, None, fx=FACE_UPSCALE, fy=FACE_UPSCALE)
+    gray = cv2.equalizeHist(gray)
+    width = gray.shape[1]
+
+    found = []
+    for i, cascade in enumerate(_face_cascades):
+        views = [(gray, False)]
+        if i == 1:
+            views.append((cv2.flip(gray, 1), True))   # 横顔は反対向きも
+        for img, flipped in views:
+            for (x, y, w, h) in cascade.detectMultiScale(
+                    img, scaleFactor=1.05, minNeighbors=4, minSize=(40, 40)):
+                if flipped:
+                    x = width - x - w
+                found.append((x, y, w, h))
+    if not found:
+        return None
+
+    x, y, w, h = max(found, key=lambda r: r[2] * r[3])   # いちばん大きい＝近い顔
+    s = FACE_UPSCALE
+    return [int(x / s), int(y / s), int((x + w) / s), int((y + h) / s)], 0.8
 
 
 def detect_motion(frame):
@@ -108,6 +162,13 @@ def detect_motion(frame):
 
 def detect(frame):
     """設定に従って検出する。戻り値は (bbox, confidence, ラベル) か None。"""
+    if DETECTOR in ("face", "auto"):
+        found = detect_face(frame)
+        if found:
+            return found[0], found[1], "person"
+        if DETECTOR == "face":
+            return None
+
     if DETECTOR in ("hog", "auto"):
         found = detect_hog(frame)
         if found:
@@ -171,6 +232,34 @@ def poll_mission():
     _mission_active = active
 
 
+# 連続でこれだけ読めなければ「切れた」とみなして開き直す（0.1秒間隔なので約3秒）
+REOPEN_AFTER_MISSES = 30
+OPEN_RETRY_SEC = 3.0
+
+
+def open_video():
+    """B の /video_feed を開けるまで待つ。
+
+    実機モードの B は Pi の最初の1枚を最大10秒待ってから映像を返すので、
+    run_all.py が A を起動した瞬間にはまだ開けないことがある。
+    以前はそこで諦めて終了していたため、--vision を付けても A が
+    居ない（＝search_person が絶対に成功しない）状態になっていた。
+    """
+    warned = False
+    while True:
+        cap = cv2.VideoCapture(CAMERA_SOURCE)
+        if cap.isOpened():
+            if warned:
+                print("[detection_lite] B の映像に繋がりました", flush=True)
+            return cap
+        cap.release()
+        if not warned:
+            print("！ B の映像にまだ繋がりません。繋がるまで待ちます"
+                  "（B が起動しているか、Pi の映像が来ているか確認）", flush=True)
+            warned = True
+        time.sleep(OPEN_RETRY_SEC)
+
+
 def main():
     global _last_post, _mission_reported
 
@@ -184,27 +273,41 @@ def main():
               "人物判定が要るなら DETECTOR=auto/hog、または "
               "ARGUS_MISSION_ACCEPT_MOTION=1", flush=True)
 
-    cap = cv2.VideoCapture(CAMERA_SOURCE)
-    if not cap.isOpened():
-        print("！ B の映像に繋げません。B が起動しているか確認してください。",
-              flush=True)
-        return
+    cap = open_video()
 
     print("[detection_lite] 開始。Ctrl+C で終了", flush=True)
     last_log = 0.0
     frames = 0
+    misses = 0
 
     while True:
         ok, frame = cap.read()
         if not ok:
-            time.sleep(0.1)
+            # 映像が途切れた（Pi の再起動・Wi-Fi の瞬断・B の再起動）。
+            # 切れた VideoCapture は二度と読めないので、開き直さないと
+            # 検出が黙って止まったままになる。
+            misses += 1
+            if misses >= REOPEN_AFTER_MISSES:
+                print("[detection_lite] 映像が途切れました。繋ぎ直します", flush=True)
+                cap.release()
+                cap = open_video()
+                misses = 0
+            else:
+                time.sleep(0.1)
             continue
+        misses = 0
 
         frames += 1
         now = time.time()
         poll_mission()
 
-        found = detect(frame)
+        # 1フレームの検出失敗で A ごと落とさない。落ちると枠も search_person の
+        # 成功判定も展示の残り時間ずっと止まる（run_all.py は A を再起動しない）。
+        try:
+            found = detect(frame)
+        except Exception as e:
+            print(f"[detection_lite] 検出でエラー（このフレームは飛ばす）: {e!r}", flush=True)
+            found = None
         if found:
             bbox, conf, label = found
 
