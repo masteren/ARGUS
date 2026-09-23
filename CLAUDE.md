@@ -33,6 +33,7 @@ B は `type` が `mission_` で始まる `/upload` を**無条件で**成功扱�
 にしか無い。`detection_lite.py` の motion（背景差分）は「動いた塊」を返すだけで、
 カメラの揺れやロボット自身の歩行でも出る。これを通すと**人が居なくても ¥500 の
 ミッションが完了する**。逃げ道の `ARGUS_MISSION_ACCEPT_MOTION=1` は既定 OFF のまま。
+`person` を出してよいのは人だと判定できる検出器だけ（今は HOG と顔検出）。
 
 ### 3. `/control` は **localhost を常に許可**する
 運営が操作するのは B を動かしている端末そのもの。ブラウザの `fetch` はトークンを
@@ -47,6 +48,8 @@ Freenove の `control.py` は `CMD_MOVE` をキューに残したまま繰り返
 
 ### 5. `CMD_MOVE` の angle は **正 = 右回り / 負 = 左回り**（実機で確定）
 直感と逆に見えるが、2026-09 に実機で確認して確定した。勝手に入れ替えないこと。
+カメラ（頭）の上下 `CMD_HEAD#0#角度` は **角度を増やす = 上**（2026-09-23 実機で確認）。
+Freenove の protocol.md は「0=水平」と書いているが誤り。実際に動く Main.py に合わせてある。
 
 ### 6. Freenove サーバーは 5002 も 8002 も **`accept()` を一度しか呼ばない**
 クライアントは同時に1つだけ。公式クライアント `Main.py` を開いたままだと ARGUS が
@@ -79,13 +82,16 @@ A は `/video_feed` を読む。1つのカメラを2プロセスで奪い合わ�
   `PYTHONIOENCODING=utf-8` を付けないと `UnicodeEncodeError` で落ちる。
 - `ultralytics`（YOLO）は PyTorch を巻き込んで 2〜3GB。**入れなくてよい** —
   `vision/detection_lite.py` が OpenCV 内蔵の検出器で枠を出す。`run_all.py --vision` が
-  有無を見て自動で使い分ける。最小構成は `flask requests opencv-python numpy`。
+  有無を見て自動で使い分ける。最小構成は `flask requests "opencv-python<5" numpy`。
+  **OpenCV 5 は入れないこと** — HOG が本体から消えていて、A が起動直後に落ちる。
 
 ## 未解決（コードでは直せない）
 
 - **Pi の電源不足警告**が出ている。5V/5A のアダプタが要る。放置すると**展示中に
   ランダムに再起動**しうる。ハードの問題なので人間が対応する。
-- **`search_person` は実機で未検証。** 低い視点では HOG が人の全身を取れない可能性が高い。
+- **`search_person` は実機で検証中。** 低い視点では HOG が人の全身を取れないことを確認した
+  （2026-09-23）。観客は覗き込むので頭と肩しか写らない。そのため `detection_lite.py` に
+  顔検出（正面＋横顔 Haar）を足し、これも `person` として扱う。カメラ角度は `ARGUS_HEAD_TILT`。
 - 公開ページのミッション成功演出（CONTRACT.md ① の「公開ページ（TODO）」）。
 
 ## 言語

@@ -361,7 +361,7 @@ def generate_camera_frames():
 def video_feed():
     if cv2 is None:
         return (
-            "OpenCVがインストールされていません。pip install opencv-python を実行してください。",
+            "OpenCVがインストールされていません。pip install 'opencv-python<5' を実行してください。",
             500,
         )
 
@@ -726,6 +726,9 @@ STAFF_ACTIONS = {
     "relax": "脱力",
     "bow": "お辞儀",
     "wave": "手を振る",
+    # カメラ（頭）の上下。低い視点だと人の全身が入らないので現場で合わせる。
+    "head_up": "カメラ↑",
+    "head_down": "カメラ↓",
 }
 
 
