@@ -153,16 +153,50 @@ def prendre_screenshot(frame, sim):
 # Veille des missions payées, en tâche de fond (daemon : s'arrête avec le script)
 threading.Thread(target=suivre_mission, daemon=True).start()
 
-cap = cv2.VideoCapture(CAMERA_SOURCE)
+# 映像の開き直し（detection_lite.py と同じ振る舞い）。
+# 以前は VideoCapture を一度開くだけで、読めなければ sleep して回り続けていた。
+# 起動時に B の映像がまだ無い（実機モードの B は Pi の最初の1枚を最大10秒待つ）
+# ／途中で切れる（Pi の再起動・Wi-Fi の瞬断）と、プロセスは生きたまま二度と
+# 検出しなくなり、run_all.py の「A が落ちた」警告も出ない。
+REOPEN_AFTER_MISSES = 30     # 0.1秒間隔で約3秒読めなければ切れたとみなす
+OPEN_RETRY_SEC = 3.0
+
+
+def ouvrir_flux():
+    """B の /video_feed を開けるまで待つ。"""
+    warned = False
+    while True:
+        c = cv2.VideoCapture(CAMERA_SOURCE)
+        if c.isOpened():
+            if warned:
+                print("[A] B の映像に繋がりました", flush=True)
+            return c
+        c.release()
+        if not warned:
+            print("！ B の映像にまだ繋がりません。繋がるまで待ちます", flush=True)
+            warned = True
+        time.sleep(OPEN_RETRY_SEC)
+
+
+cap = ouvrir_flux()
 fps_t = time.time()
 print(f"Flux démarré depuis {CAMERA_SOURCE} — Ctrl+C pour quitter", flush=True)
+misses = 0
 
 try:
     while True:
         ret, frame = cap.read()
         if not ret:
-            time.sleep(0.1)
+            misses += 1
+            if misses >= REOPEN_AFTER_MISSES:
+                print("[A] 映像が途切れました。繋ぎ直します", flush=True)
+                cap.release()
+                cap = ouvrir_flux()
+                misses = 0
+            else:
+                time.sleep(0.1)
             continue
+        misses = 0
 
         now = time.time()
         fps = 1 / (now - fps_t) if now != fps_t else 0
