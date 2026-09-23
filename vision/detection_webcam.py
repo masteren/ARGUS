@@ -15,7 +15,12 @@ from datetime import datetime
 # que B/app.py). Défaut = 5000, conforme au contrat. Sur macOS, AirPlay occupe
 # 5000 : lancer les tests d'intégration avec PORT=5001.
 B_PORT     = os.environ.get("PORT", "5000")
-B_URL      = "http://localhost:%s" % B_PORT
+# ホストは "localhost" ではなく "127.0.0.1"。Windows では localhost が先に
+# IPv6(::1) へ解決され、IPv4 で待ち受けている B への接続が一度失敗してから
+# retry するため 1リクエストあたり約2秒待たされる（実測 7ms → 2050ms）。
+# 別マシンの B を見るときは ARGUS_B_HOST で上書きする。
+B_HOST     = os.environ.get("ARGUS_B_HOST", "127.0.0.1")
+B_URL      = "http://%s:%s" % (B_HOST, B_PORT)
 UPLOAD_URL = f"{B_URL}/upload"                 # 【CORRIGÉ】était /detection
 
 # ── Source caméra (DÉCISION 2 = option 1 : seul B ouvre la caméra) ──────────

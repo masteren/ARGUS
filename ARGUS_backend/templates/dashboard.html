@@ -32,6 +32,29 @@
         </div>
     </section>
 
+    <!-- 運営の直接操作。/pay を通さないので課金もランキングも汚れない。
+         展示中にロボットを立て直す・止める・開演前に試す、のための手元操作。 -->
+    <section class="card">
+        <h2>直接操作（運営用）</h2>
+        <p class="control-note">
+            チケットを消費しません。ランキングにも載りません。
+            <strong>停止</strong>は溜まった未実行命令も消してから止めます。
+        </p>
+
+        <div class="control-grid">
+            <button class="ctrl" data-action="turn_left">↰ 左旋回</button>
+            <button class="ctrl" data-action="forward">↑ 前進</button>
+            <button class="ctrl" data-action="turn_right">↱ 右旋回</button>
+            <button class="ctrl" data-action="bow">お辞儀</button>
+            <button class="ctrl" data-action="back">↓ 後退</button>
+            <button class="ctrl" data-action="wave">手を振る</button>
+            <button class="ctrl ctrl-stop" data-action="stop">■ 停止（キューも消す）</button>
+            <button class="ctrl" data-action="relax">脱力（サーボを緩める）</button>
+        </div>
+
+        <p id="ctrl-result" class="control-result" role="status" aria-live="polite"></p>
+    </section>
+
     <section class="card">
         <h2>ロボット命令キュー</h2>
 
@@ -111,6 +134,49 @@
     </section>
 
 </main>
+
+<script>
+// 運営の直接操作。押した瞬間に B の command_queue へ staff 命令として積み、
+// C（paid_poller）が次のポーリングで拾ってロボットに流す。
+// 既定では localhost からしか通らない（B 側 staff_is_allowed）。
+const result = document.getElementById("ctrl-result");
+
+function show(text, ok) {
+    result.textContent = text;
+    result.className = "control-result " + (ok ? "ok" : "ng");
+}
+
+document.querySelectorAll(".ctrl").forEach(btn => {
+    btn.addEventListener("click", async () => {
+        const action = btn.dataset.action;
+
+        // 連打で二重に積まれないよう、応答が返るまで無効化する
+        document.querySelectorAll(".ctrl").forEach(b => b.disabled = true);
+        show(`${btn.textContent.trim()} を送信中...`, true);
+
+        try {
+            const res = await fetch("/control", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({action})
+            });
+            const data = await res.json();
+
+            if (data.ok) {
+                let msg = `✓ ${data.action_label} を送信しました`;
+                if (data.flushed) msg += `（未実行の命令 ${data.flushed} 件も消しました）`;
+                show(msg, true);
+            } else {
+                show(`✗ ${data.error || "失敗しました"}`, false);
+            }
+        } catch (e) {
+            show(`✗ B に繋がりません: ${e}`, false);
+        } finally {
+            document.querySelectorAll(".ctrl").forEach(b => b.disabled = false);
+        }
+    });
+});
+</script>
 
 </body>
 </html>

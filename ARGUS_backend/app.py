@@ -51,6 +51,19 @@ CAMERA_INDEX = 0
 CAMERA_WIDTH = 640
 CAMERA_HEIGHT = 480
 
+# ARGUS_ROBOT_HOST : 設定すると、ローカルの USB カメラではなく
+#   Freenove サーバー（Pi）の映像ストリームを使う。＝ロボット一人称視点。
+#   C（voice/argus_voice.py）が命令の送信先に使うのと同じ変数なので、
+#   「Pi の IP を1つ決めれば B と C の両方がそこを向く」。
+#   未設定なら従来どおり CAMERA_INDEX のローカルカメラ（結合試験・単体開発用）。
+ROBOT_HOST = os.environ.get("ARGUS_ROBOT_HOST")
+ROBOT_VIDEO_PORT = int(os.environ.get("ARGUS_ROBOT_VIDEO_PORT", "8002"))
+
+# ARGUS_STAFF_TOKEN : 運営の直接操作（/control）を別端末から使うための合言葉。
+#   未設定なら /control は localhost からのみ。観客と同じLANに置くので、
+#   スタッフのスマホから操作したいときだけ設定する。
+STAFF_TOKEN = os.environ.get("ARGUS_STAFF_TOKEN")
+
 
 # ==================================================
 # アクション設定
@@ -241,24 +254,57 @@ def process_payment(amount, payer_name):
 # /video_feed でブラウザへリアルタイム映像を流す
 # ==================================================
 _camera = None
-_camera_lock = threading.Lock()
+_camera_lock = threading.Lock()        # read() の排他用
+_camera_init_lock = threading.Lock()   # 初期化の排他用（下記の理由で必須）
 
 
 def get_camera():
-    """カメラを1回だけ起動して使い回す。"""
+    """カメラを1回だけ起動して使い回す。
+
+    ARGUS_ROBOT_HOST が設定されていれば Freenove（Pi）の映像＝ロボット一人称視点、
+    未設定ならローカルの USB カメラ。どちらも read() の使い方は同じなので、
+    呼ぶ側（generate_camera_frames）はカメラの正体を意識しない。
+    """
     global _camera
 
     if cv2 is None:
         return None
 
-    if _camera is None:
-        camera = cv2.VideoCapture(CAMERA_INDEX)
-        camera.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_WIDTH)
-        camera.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_HEIGHT)
+    if _camera is not None:          # 速い経路：既に出来ている
+        return _camera
 
-        if not camera.isOpened():
-            camera.release()
-            return None
+    # ここをロックで守るのは必須。Flask はマルチスレッドなので、複数の
+    # /video_feed が同時に来ると FreenoveCamera が2つ作られる。Freenove の
+    # サーバーは 8002 を一度しか accept しないので2つ目は繋がらず、しかも
+    # _camera が上書きされて1つ目が GC される＝ソケットが閉じ、サーバー側が
+    # "End transmit" で映像を打ち切ってしまう（実機で発生）。
+    with _camera_init_lock:
+        if _camera is not None:      # 待っている間に他スレッドが作り終えた
+            return _camera
+
+        if ROBOT_HOST:
+            from freenove_camera import FreenoveCamera
+
+            camera = FreenoveCamera(ROBOT_HOST, ROBOT_VIDEO_PORT)
+            # Pi 側が accept して最初の1枚を流すまで少し待つ。
+            # 待たずに返すと isOpened() が False になり /video_feed が 500 を返す。
+            if not camera.wait_first_frame(timeout=10.0):
+                print(
+                    f"[camera] Freenove {ROBOT_HOST}:{ROBOT_VIDEO_PORT} から映像が来ません。"
+                    "Pi で main.py が起動しているか、公式クライアント Main.py が"
+                    "8002 を先に掴んでいないか確認してください。",
+                    flush=True,
+                )
+                camera.release()
+                return None
+        else:
+            camera = cv2.VideoCapture(CAMERA_INDEX)
+            camera.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_WIDTH)
+            camera.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_HEIGHT)
+
+            if not camera.isOpened():
+                camera.release()
+                return None
 
         _camera = camera
 
@@ -272,21 +318,39 @@ def generate_camera_frames():
     if camera is None:
         return
 
+    # Freenove から来る映像は元から JPEG。read_jpeg() があるならデコード＋再エンコードを
+    # 省いてそのまま流す（Pi の負荷と遅延を減らす）。ローカルカメラは従来どおり encode する。
+    passthrough = hasattr(camera, "read_jpeg")
+    last_seq = None
+
     while True:
-        with _camera_lock:
-            success, frame = camera.read()
+        if passthrough:
+            # FreenoveCamera は内部でロック済みなので _camera_lock は要らない。
+            # ここで外側のロックを取ると視聴端末が増えたとき互いに待ち合ってしまう。
+            #
+            # after_seq を渡して「次の新しいフレーム」を待つのが肝。待たずに
+            # 最新フレームを取ると、同じ画を CPU 全開で送り続けることになり、
+            # 受信側が重複フレームで詰まって実測 0.5fps まで落ちた。
+            success, frame_bytes, last_seq = camera.read_jpeg(after_seq=last_seq)
 
-        if not success:
-            time.sleep(0.1)
-            continue
+            if not success:
+                time.sleep(0.1)
+                continue
+        else:
+            with _camera_lock:
+                success, frame = camera.read()
 
-        ok, buffer = cv2.imencode(".jpg", frame)
+            if not success:
+                time.sleep(0.1)
+                continue
 
-        if not ok:
-            time.sleep(0.1)
-            continue
+            ok, buffer = cv2.imencode(".jpg", frame)
 
-        frame_bytes = buffer.tobytes()
+            if not ok:
+                time.sleep(0.1)
+                continue
+
+            frame_bytes = buffer.tobytes()
 
         yield (
             b"--frame\r\n" b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
@@ -643,6 +707,164 @@ def pay():
             "action_label": action_label,
             "payer_name": payer_name,
             "payment_id": payment_result["payment_id"],
+        }
+    )
+
+
+# ==================================================
+# 運営用：直接操作（展示の現場でスタッフが使う）
+# /pay と違って課金・ランキング・取引履歴を汚さずにロボットを動かす。
+# 観客メニューに無い stop / back / relax もここからは使える
+# （robot_bridge.py に実装済みのものだけを並べてある）。
+# ==================================================
+STAFF_ACTIONS = {
+    "forward": "前進",
+    "back": "後退",
+    "turn_left": "左旋回",
+    "turn_right": "右旋回",
+    "stop": "停止",
+    "relax": "脱力",
+    "bow": "お辞儀",
+    "wave": "手を振る",
+}
+
+
+def staff_is_allowed():
+    """運営操作を許すかどうか。
+
+    既定は B を動かしている端末（localhost）だけ。観客と同じLANに置く以上、
+    誰でも叩ける経路にはしない。スタッフのスマホから操作したい場合だけ
+    ARGUS_STAFF_TOKEN を設定し、同じ値を X-Staff-Token ヘッダで送る。
+    """
+    if STAFF_TOKEN:
+        return request.headers.get("X-Staff-Token") == STAFF_TOKEN
+    return request.remote_addr in ("127.0.0.1", "::1")
+
+
+@app.route("/control", methods=["POST"])
+def control():
+    if not staff_is_allowed():
+        return jsonify(
+            {"ok": False, "error": "権限がありません（運営端末から操作してください）"}
+        ), 403
+
+    data = request.get_json(silent=True) or {}
+    action = clean_text(data.get("action"))
+
+    if action not in STAFF_ACTIONS:
+        return jsonify({"ok": False, "error": "未定義の操作です: %s" % action}), 400
+
+    created_at = now_text()
+    flushed = 0
+
+    with get_connection() as con:
+        cur = con.cursor()
+
+        # 「停止」は溜まった命令を片付けてから止める。そうしないとキューに
+        # 残った前進などが後から実行され、止めたはずのロボットが動き出す。
+        if action == "stop":
+            cur.execute(
+                "UPDATE command_queue SET status = 'done', done_at = ? "
+                "WHERE status = 'pending'",
+                (created_at,),
+            )
+            flushed = cur.rowcount
+
+        cur.execute(
+            """
+            INSERT INTO command_queue
+            (transaction_id, action, action_label, source, status, created_at)
+            VALUES (NULL, ?, ?, 'staff', 'pending', ?)
+            """,
+            (action, STAFF_ACTIONS[action], created_at),
+        )
+        command_id = cur.lastrowid
+
+    return jsonify(
+        {
+            "ok": True,
+            "command_id": command_id,
+            "action": action,
+            "action_label": STAFF_ACTIONS[action],
+            "flushed": flushed,      # stop のとき、消した未実行命令の数
+        }
+    )
+
+
+# ==================================================
+# バッテリー残量
+# ロボットの電圧は C だけが知れる（5002 の TCP を握っているのが C のため）。
+# C が定期的に CMD_POWER を投げて POST /battery で置いていき、
+# 公開ページとダッシュボードは GET /battery で読む。
+# 瞬時値なので DB には残さずメモリに最新値だけ持つ。
+# ==================================================
+_battery = {"load": None, "pi": None, "at": None}
+_battery_lock = threading.Lock()
+
+# 2セルのリチウム電池（満充電 8.4V / 公称 7.4V / 下限 6.0V）を前提に割合を出す。
+BATTERY_FULL_V = 8.4
+BATTERY_EMPTY_V = 6.0
+# Freenove の server.py は 負荷側<5.5V または Pi側<6V でブザーを鳴らす。
+# 展示中に止まると困るので、それより手前で警告を出す。
+BATTERY_LOW_V = 7.2
+BATTERY_CRITICAL_V = 6.6
+
+
+def battery_level(volts):
+    """電圧から残量（0-100）をざっくり出す。"""
+    if volts is None:
+        return None
+    ratio = (volts - BATTERY_EMPTY_V) / (BATTERY_FULL_V - BATTERY_EMPTY_V)
+    return int(max(0.0, min(1.0, ratio)) * 100)
+
+
+@app.route("/battery", methods=["POST"])
+def put_battery():
+    """C からの電圧報告を受ける。"""
+    data = request.get_json(silent=True) or {}
+    try:
+        load_v = float(data["load"])
+        pi_v = float(data["pi"])
+    except (KeyError, TypeError, ValueError):
+        return jsonify({"ok": False, "error": "load と pi が必要です"}), 400
+
+    with _battery_lock:
+        _battery["load"] = load_v
+        _battery["pi"] = pi_v
+        _battery["at"] = time.time()
+
+    return jsonify({"ok": True})
+
+
+@app.route("/battery")
+def get_battery():
+    """公開ページ・ダッシュボードが読む。"""
+    with _battery_lock:
+        load_v, pi_v, at = _battery["load"], _battery["pi"], _battery["at"]
+
+    if at is None:
+        # まだ一度も報告が無い（C が繋がっていない / 実機なし）
+        return jsonify({"ok": True, "available": False, "status": "unknown"})
+
+    age = time.time() - at
+    lowest = min(load_v, pi_v)
+
+    if lowest < BATTERY_CRITICAL_V:
+        status = "critical"
+    elif lowest < BATTERY_LOW_V:
+        status = "low"
+    else:
+        status = "good"
+
+    return jsonify(
+        {
+            "ok": True,
+            "available": True,
+            "load": round(load_v, 2),       # サーボ側
+            "pi": round(pi_v, 2),           # ラズパイ側
+            "level": battery_level(lowest),  # 0-100
+            "status": status,
+            "age_sec": round(age, 1),       # 古い値かどうかの判断用
         }
     )
 

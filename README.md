@@ -10,16 +10,22 @@
 ```
 ARGUS_backend/        担当B：Flask+SQLite 後端＋取引処理＋Web（契約の正本）
   app.py
+  freenove_camera.py    ← 追加：Freenove の映像(8002)を VideoCapture 互換で読むアダプタ
   templates/  static/
 vision/               担当A：画像認識
   detection_webcam.py   ← 修正：/upload 対応、camera はBから取得、bbox付与
+  detection_lite.py     ← 追加：YOLO無しで枠を出す軽量版（OpenCV内蔵の検出器）
   test_camera.py  test_flux.py  test_yolo_image.py
 voice/                担当C：音声＋歩行ブリッジ＋統合
   argus_voice.py        ← 修正：/events を {"events":[...]} で解析
+  paid_only.py          ← 追加：音声なしの C（APIキー・マイク不要。Web操作だけならこれ）
   paid_poller.py        ← 修正：port 5000、/commands を {"commands":[...]} で解析
   robot_bridge.py       ← 強化：wave/bow/search_person をFreenove照合済み命令で実装
 tools/                結合スモークテスト
+  run_all.py            ← 追加：B/A/C をまとめて起動しブラウザを開く
+  patch_freenove_server.py ← 追加：Freenove 側に必要な修正（リポジトリ外なのでここに記録）
 docs/                 設計・企画ドキュメント（→ docs/README.md）
+  DEPLOY_ROBOT.md       ← 追加：実機接続の手順・systemd・トラブル対応
 CONTRACT.md           正本の契約表＋残タスク（必読）
 requirements.txt      依存パッケージ
 ```
@@ -36,6 +42,9 @@ requirements.txt      依存パッケージ
    `CAMERA_SOURCE = B_URL + "/video_feed"` で B の配信を読む。1つのカメラを2プロセスで
    奪い合わないための選択。**翻すなら**：A を `VideoCapture(0)` に戻し、B の `/video_feed`
    を止めて A が描画付きで serve する。A をローカル単体で試すだけなら `CAMERA_SOURCE = 0`。
+   実機接続時はこの「B の1つのカメラ」の中身が **Freenove の映像(8002)** に差し替わる
+   （`ARGUS_backend/freenove_camera.py`）。A から見た口は `/video_feed` のままなので
+   **A は1行も変わらない**。
 4. **`search_person` の起動トリガは `/mission/active`**。`/commands` は C が数秒で `done` に
    するので A が取り逃がす。ミッションは成功するまで active のままなので、そちらを見る。
 
@@ -85,11 +94,25 @@ cd vision && python3 detection_webcam.py
 cd voice && python3 argus_voice.py
 ```
 
-実機（Pi）へ移すとき：環境変数だけ。コードは触らない。
+## 実機（6脚ロボット）に繋いで動かす
+
+**Freenove 公式クライアント（`Code/Client/Main.py`）は使わない。** その仕事＝命令(5002)と
+映像(8002)を ARGUS が引き取ったので、**展示は ARGUS の Web ページだけで完結する**。
+詳しい手順・systemd 設定・トラブル対応は **[docs/DEPLOY_ROBOT.md](docs/DEPLOY_ROBOT.md)**。
 
 ```bash
-ARGUS_ROBOT_HOST=<PiのIP> python3 argus_voice.py    # 未設定なら Mock で動く
+# Pi 側：GUI なしで起動（-t=TCP開始 -n=GUIなし）。systemd に入れれば電源だけで立ち上がる
+sudo python3 Code/Server/main.py -t -n
+
+# PC 側：B と C（と A）をまとめて起動し、ブラウザまで開く
+python3 tools/run_all.py --robot <PiのIP> --vision
 ```
+
+`ARGUS_ROBOT_HOST` を1つ決めると **B はカメラをロボット一人称に切り替え、C は命令の
+送信先にする**。未設定なら B はローカルのUSBカメラ、C は Mock（実機なしで通しで動く）。
+
+> ⚠️ Freenove サーバーは 5002 も 8002 も**一度しか accept しない**。公式クライアント
+> `Main.py` を開いたままだと ARGUS が繋げない。必ず閉じること。
 
 ## 観客のスマホから開く（展示）
 

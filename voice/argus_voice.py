@@ -4,7 +4,7 @@ import requests
 from datetime import datetime
 from openai import OpenAI
 from robot_bridge import MockBridge, FreenoveBridge
-from paid_poller import poll_paid_commands, B_URL
+from paid_poller import poll_paid_commands, report_battery_loop, B_URL
 import sounddevice as sd
 import soundfile as sf
 import numpy as np
@@ -195,6 +195,11 @@ if __name__ == "__main__":
         target=poll_paid_commands, args=(bridge,), daemon=True
     )
     paid_thread.start()
+
+    # 電圧を B に報告する（公開ページのバッテリー表示用）。
+    # ロボットの電圧を取れるのは 5002 を握っている C だけ。
+    threading.Thread(target=report_battery_loop, args=(bridge,),
+                     daemon=True).start()
 
     # 音声はメインスレッドで実行
     voice_loop()

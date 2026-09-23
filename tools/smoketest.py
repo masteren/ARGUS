@@ -167,9 +167,16 @@ def stop_backend(proc, log_file):
     if proc is None or proc.poll() is not None:
         return
 
-    for sig in (signal.SIGTERM, signal.SIGKILL):
+    # 「穏やかに終了 → 効かなければ強制終了」の2段。
+    # POSIX は start_new_session=True で分けたプロセスグループごと落とす。
+    # Windows には killpg / getpgid / SIGKILL が無いので Popen のメソッドを使う。
+    for stage in ("terminate", "kill"):
         try:
-            os.killpg(os.getpgid(proc.pid), sig)
+            if os.name == "posix":
+                sig = signal.SIGTERM if stage == "terminate" else signal.SIGKILL
+                os.killpg(os.getpgid(proc.pid), sig)
+            else:
+                getattr(proc, stage)()
         except OSError:
             try:
                 proc.kill()
@@ -195,11 +202,31 @@ def dump_backend_log():
 
 
 def remove_temp_files():
+    """使い捨てDBとログを消す。
+
+    Windows では B を終了させた直後、まだ SQLite のハンドルが OS から解放されて
+    おらず unlink が PermissionError(WinError 32) になることがある。消し残すと
+    次回の実行が前回の transactions を引き継いでしまい、[5] の課金集計が合わなく
+    なる（＝実際に起きた）。数回リトライしてから諦める。
+    """
     removed = []
     for path in (DB_PATH, Path(str(DB_PATH) + "-wal"), Path(str(DB_PATH) + "-shm"), LOG_PATH):
-        if path.exists():
-            path.unlink()
-            removed.append(path.name)
+        for attempt in range(10):
+            if not path.exists():
+                break
+            try:
+                path.unlink()
+                removed.append(path.name)
+                break
+            except PermissionError:
+                if attempt == 9:
+                    print(
+                        "！ %s を消せませんでした。次回の実行前に手で消してください"
+                        "（残すと課金集計がずれます）。" % path.name,
+                        flush=True,
+                    )
+                    break
+                time.sleep(0.3)
     return removed
 
 
@@ -307,6 +334,22 @@ def run_checks():
     )
     forward_command_id = pay["command_id"]
 
+    # ── 連打への備え（要件定義書 NFR）───────────────
+    # 展示端末は共用なので、連打だけを弾いて端末ごと締め出さないこと。
+    #
+    # ここは「直前の /pay のすぐ後に撃つ」ことが条件。done 待ち（C の poller は
+    # interval=2秒）を挟んでから撃つと PAY_MIN_INTERVAL(1.5秒) を超えてしまい、
+    # 2発目が正規の要求として 200 で通る。タイミング次第で通ったり落ちたりする
+    # 不安定なテストになっていたので、1発目の直後へ移した。
+    # 429 は transactions に行を作らない（app.py は INSERT より前で返す）ため、
+    # [5] の課金集計は汚れない。
+    status, blocked = post_json("/pay", {"payer_name": "smoke_taro", "action": "forward"})
+    check(
+        "連打（%.1f秒以内の再送）は 429 で弾かれる" % PAY_MIN_INTERVAL,
+        status == 429 and blocked.get("ok") is False,
+        "status=%s body=%r" % (status, blocked),
+    )
+
     check(
         "C の RecordingBridge が forward を受け取った",
         wait_until(lambda: bridge.has("forward")),
@@ -323,15 +366,8 @@ def run_checks():
         "%.0f 秒待っても pending のまま" % STEP_TIMEOUT,
     )
 
-    # ── 連打への備え（要件定義書 NFR）───────────────
-    # 展示端末は共用なので、連打だけを弾いて端末ごと締め出さないこと。
-    status, blocked = post_json("/pay", {"payer_name": "smoke_taro", "action": "forward"})
-    check(
-        "連打（%.1f秒以内の再送）は 429 で弾かれる" % PAY_MIN_INTERVAL,
-        status == 429 and blocked.get("ok") is False,
-        "status=%s body=%r" % (status, blocked),
-    )
-
+    # 連打チェックは [2] の先頭（1発目の直後）へ移動した。ここまで来れば
+    # done 待ちで PAY_MIN_INTERVAL は過ぎているので、次は素通りして 400 に届く。
     status, bad = post_json("/pay", {"payer_name": "x" * 100, "action": "forward"})
     check(
         "長すぎる名前は 400 で弾かれる",

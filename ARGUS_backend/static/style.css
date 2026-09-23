@@ -1438,3 +1438,116 @@ body.ranking-page::before {
     color: #64748b;
     justify-content: center;
 }
+
+/* ============================================
+   運営の直接操作パネル（dashboard.html）
+   観客用の .action-button とは別物とすぐ分かるよう、
+   彩度を落としたグレー基調にして「業務用の手元操作」に見せる。
+   ============================================ */
+.control-note {
+    margin: 0 0 14px;
+    font-size: 13px;
+    color: #6b7280;
+    line-height: 1.6;
+}
+
+.control-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+}
+
+.ctrl {
+    padding: 14px 12px;
+    font-size: 15px;
+    font-weight: 600;
+    color: #1f2937;
+    background: #e5e7eb;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background .15s, transform .05s;
+}
+
+.ctrl:hover:not(:disabled) {
+    background: #d1d5db;
+}
+
+.ctrl:active:not(:disabled) {
+    transform: translateY(1px);
+}
+
+.ctrl:disabled {
+    opacity: .5;
+    cursor: not-allowed;
+}
+
+/* 停止だけは緊急操作なので赤。探さずに押せることを優先する */
+.ctrl-stop {
+    color: white;
+    background: #dc2626;
+    border-color: #b91c1c;
+}
+
+.ctrl-stop:hover:not(:disabled) {
+    background: #b91c1c;
+}
+
+.control-result {
+    margin: 14px 0 0;
+    min-height: 1.2em;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.control-result.ok {
+    color: #15803d;
+}
+
+.control-result.ng {
+    color: #b91c1c;
+}
+
+/* ============================================
+   バッテリー表示（public.html 左パネル）
+   状態3段階で色を変える。展示中に電池切れで止まるのを避けたいので、
+   Freenove のブザー警告ライン（負荷5.5V / Pi 6V）より手前で色を変える。
+   ============================================ */
+.battery-row strong.bat-good     { color: #4ade80; }
+.battery-row strong.bat-low      { color: #fbbf24; }
+.battery-row strong.bat-critical { color: #f87171; }
+
+.battery-bar {
+    height: 6px;
+    margin: 6px 0 4px;
+    background: rgba(255, 255, 255, .12);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.battery-fill {
+    height: 100%;
+    width: 0;
+    border-radius: 3px;
+    transition: width .6s ease, background .6s ease;
+    background: #4ade80;
+}
+
+.battery-fill.bat-low      { background: #fbbf24; }
+.battery-fill.bat-critical {
+    background: #f87171;
+    /* 危険域は点滅させて気づかせる */
+    animation: bat-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes bat-pulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: .45; }
+}
+
+.battery-detail {
+    margin: 0;
+    font-size: 11px;
+    letter-spacing: .04em;
+    color: rgba(255, 255, 255, .45);
+}
