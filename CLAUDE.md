@@ -60,6 +60,7 @@ Freenove の protocol.md は「0=水平」と書いているが誤り。実際�
 Pi 側に必要な修正は `tools/patch_freenove_server.py` が**唯一の記録**。Pi のコードを
 直したら、必ずこのスクリプトにも反映する。書かなければ次に Pi を再セットアップした
 瞬間に失われる。`--explain` / `--check` / `--dry-run` があり、何度当てても安全。
+サーボ校正値（`point.txt`）など Pi にしか無いデータの控えは `tools/pi_backup/`。
 
 ### 8. HTTP の宛先は `localhost` ではなく `127.0.0.1`
 Windows では `localhost` が先に IPv6(`::1`) へ解決され、IPv4 で待つ B への接続が一度

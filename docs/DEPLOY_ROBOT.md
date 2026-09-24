@@ -55,6 +55,10 @@ python3 tools/patch_freenove_server.py
 | `control.py` の停止判定に `angle` を追加 | その場旋回（x=0,y=0,angle≠0）が「停止」扱いされ `relax(False)` を通らないので、**脱力状態から旋回させても動かない** |
 | `control.py` の `condition_monitor` に sleep | 待機中も1コアを 100% 占有 |
 
+> **SD カードを作り直したときは、サーボ校正値も戻すこと。** 校正値（`point.txt`）は
+> この1台専用で SD カードにしか無いので、控えを [tools/pi_backup/](../tools/pi_backup/) に
+> 置いてある。戻し方はそこの README。
+
 ## Pi 側：画面を開かずに起動する
 
 GUI（あの On / Off の小さい窓）は要らない。`-t`＝TCP開始、`-n`＝GUIなし。
