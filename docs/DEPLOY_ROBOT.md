@@ -21,7 +21,7 @@ ARGUS が Freenove 公式クライアント（`Code/Client/Main.py`）の仕事�
 
 公式クライアントが握っていた **5002（命令）と 8002（映像）を、C と B が分担して引き取った**
 というのが今回の統合。プロトコル自体は Freenove のまま使っているが、
-サーバー側にも4箇所の修正が要る（次節のパッチ）。
+サーバー側にも5箇所の修正が要る（次節のパッチ）。
 
 > ⚠️ **Freenove サーバーは 5002 も 8002 も一度しか `accept()` しない**
 > （`Code/Server/server.py` の `receive_commands` / `transmit_video`）。
@@ -46,7 +46,7 @@ python3 tools/patch_freenove_server.py --check
 python3 tools/patch_freenove_server.py
 ```
 
-何度実行しても安全（適用済みなら何もしない）。当てる内容は4つ：
+何度実行しても安全（適用済みなら何もしない）。当てる内容は5つ：
 
 | 直すところ | 直さないと起きること |
 |---|---|
@@ -54,6 +54,7 @@ python3 tools/patch_freenove_server.py
 | `main.py` の `while True: pass` | `-n` 起動時に1コアを 100% 占有 |
 | `control.py` の停止判定に `angle` を追加 | その場旋回（x=0,y=0,angle≠0）が「停止」扱いされ `relax(False)` を通らないので、**脱力状態から旋回させても動かない** |
 | `control.py` の `condition_monitor` に sleep | 待機中も1コアを 100% 占有 |
+| `servo.py` の `set_servo_angle` で I2C エラーを捕まえる | 電圧降下の瞬間の書き込み失敗で命令受信／歩容のスレッドが死に、**繋がっているのに何を押しても動かない**状態になる（サービス再起動まで戻らない） |
 
 > **SD カードを作り直したときは、サーボ校正値も戻すこと。** 校正値（`point.txt`）は
 > この1台専用で SD カードにしか無いので、控えを [tools/pi_backup/](../tools/pi_backup/) に
@@ -83,6 +84,9 @@ Wants=network-online.target
 Type=simple
 User=root
 WorkingDirectory=/home/masteren/Freenove_Big_Hexapod_Robot_Kit_for_Raspberry_Pi/Code/Server
+# 起動時に wlan0 の IP がまだ無いと server.py の get_interface_ip が落ちるが、
+# main.py 自体は生き残るので active のままポートが開かない。IP が付くまで待つ（最大60秒）。
+ExecStartPre=/bin/sh -c "for i in $(seq 60); do ip -4 addr show wlan0 | grep -q inet && exit 0; sleep 1; done; exit 1"
 ExecStart=/usr/bin/python3 main.py -t -n
 Restart=on-failure
 RestartSec=5
@@ -141,7 +145,8 @@ python3 vision/detection_webcam.py
 | その場旋回しない／脱力から復帰しない | `control.py` のパッチが当たっていない。`python3 tools/patch_freenove_server.py --check` で確認 |
 | 前進が止まらず歩き続ける | C が古い。`robot_bridge.py` が動作後に停止コマンドを送る版か確認（`ARGUS_MOVE_SECONDS` 秒で自動停止する） |
 | 命令は届くのに脚が動かない | ロボット側の問題。Pi で `sudo python3 test.py Servo`（サーボ単体）と `sudo python3 test.py ADC`（電圧、7V以上必要）を確認 |
-| 途中から何を押しても動かなくなった（Pi のログに `OSError: [Errno 121] Remote I/O error`） | **電源不足でサーボドライバ（PCA9685）が I2C から落ちた。** 歩行中の電圧降下で起きる（`dmesg` に `Undervoltage detected!`）。ロボットの電源スイッチを切って5秒待って入れ直す。サービスは5秒ごとに自動で再起動を試みるので、Pi には触らなくてよい。根本対策は 5V/5A アダプタと満充電 |
+| 途中から何を押しても動かなくなった（Pi のログに `OSError: [Errno 121] Remote I/O error`） | **電源不足でサーボドライバ（PCA9685）が I2C から落ちた。** 歩行中の電圧降下で起きる（`dmesg` に `Undervoltage detected!`）。`patch_freenove_server.py` の5つ目が当たっていれば一瞬の失敗は飛ばして動き続ける。それでも止まったままならロボットの電源スイッチを切って5秒待って入れ直す。サービスは5秒ごとに自動で再起動を試みるので、Pi には触らなくてよい。根本対策は 5V/5A アダプタと満充電 |
+| `freenove.service` は active なのに繋がらない（Pi で `sudo ss -ltn` に 5002 が無い） | 起動時に WiFi の IP がまだ無かった（ログに `OSError: [Errno 99] Cannot assign requested address`）。`sudo systemctl restart freenove.service`。上のサービス定義の `ExecStartPre`（IP が付くまで待つ）が入っているか確認 |
 | `freenove.service` が起動しない（`Unit ... could not be found`） | サービス未登録。上の「電源を入れるだけで立ち上がるようにする」を実行する |
 | search_person が成功しない／枠が motion しか出ない | カメラが低すぎる。`/dashboard` の「▲ カメラを上に」で調整し、C のログに出る角度を `ARGUS_HEAD_TILT` に設定する。A のログに `[detection_lite] … fps` が出ていなければ A が落ちている（`opencv-python<5` か確認） |
 | 映像がカクつく | `/video_feed` は MJPEG。同時視聴が増えるほど落ちる。観客端末は1台に絞る |

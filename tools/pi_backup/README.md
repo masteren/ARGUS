@@ -25,5 +25,5 @@ scp tools/pi_backup/point.txt tools/pi_backup/params.json \
     pi:Freenove_Big_Hexapod_Robot_Kit_for_Raspberry_Pi/Code/Server/
 ```
 
-そのあと Pi で `python3 tools/patch_freenove_server.py`（本家への修正4つ）を当て、
+そのあと Pi で `python3 tools/patch_freenove_server.py`（本家への修正5つ）を当て、
 systemd の `freenove.service` を登録すれば元どおりになる。

@@ -61,6 +61,30 @@ PATCHES = [
         "            if self.command_queue[0] == '':\n"
         "                time.sleep(0.005)\n",
     ),
+    (
+        "servo.py",
+        "サーボ書き込みの I2C エラーでスレッドごと死なない（1回やり直し、駄目なら飛ばす）",
+        lambda s: "def _set_servo_angle_raw(" in s,
+        "    def set_servo_angle(self, channel, angle):\n",
+        "    def set_servo_angle(self, channel, angle):\n"
+        "        # [ARGUS] 電圧降下の瞬間に I2C 書き込みが OSError(121) を出すと、\n"
+        "        # 呼んだスレッド（命令受信 receive_commands／歩容 condition_monitor）が\n"
+        "        # そのまま死に、接続は残るのに以後の命令が一切効かなくなる（実機で2回）。\n"
+        "        # 1回やり直し、それでも駄目ならこの1回だけ飛ばしてスレッドを生かす。\n"
+        "        try:\n"
+        "            self._set_servo_angle_raw(channel, angle)\n"
+        "        except OSError:\n"
+        "            time.sleep(0.005)\n"
+        "            try:\n"
+        "                self._set_servo_angle_raw(channel, angle)\n"
+        "            except OSError as e:\n"
+        "                self.i2c_errors = getattr(self, 'i2c_errors', 0) + 1\n"
+        "                if self.i2c_errors % 100 == 1:   # 電圧降下中は大量に出るので間引く\n"
+        "                    print('[ARGUS] servo I2C error (skipped, total %d): %s'\n"
+        "                          % (self.i2c_errors, e), flush=True)\n"
+        "\n"
+        "    def _set_servo_angle_raw(self, channel, angle):\n",
+    ),
 ]
 
 # main.py は time を import していないので、sleep を使う前に足す
@@ -92,6 +116,18 @@ def describe():
  4. control.py : condition_monitor に sleep を入れる
     sleep 無しの while True で、待機中も 1コアを 100% 占有していた。
     命令の実行中は sleep しないので歩容のタイミングには影響しない。
+
+ 5. servo.py : set_servo_angle の I2C エラーでスレッドを殺さない
+    電源が弱いと、歩行中やサーボを動かした瞬間に電圧が落ち、
+    PCA9685 への書き込みが OSError: [Errno 121] Remote I/O error になる。
+    本家はこれを捕まえないので、呼んだスレッドがそのまま死ぬ：
+      ・命令受信（receive_commands）が死ぬと、接続は残ったまま誰も読まない
+        → ARGUS からは繋がって見えるのに、何を押しても動かない
+      ・歩容（condition_monitor）が死ぬと、命令は届くのに脚が動かない
+    どちらもサービスを再起動するまで戻らない（2026-09-23, 09-25 に実機で発生）。
+    1回だけやり直し、駄目ならその1回の書き込みを飛ばして続ける。
+    起動時の PCA9685 初期化は変えていない（基板に電源が無ければ従来どおり
+    起動に失敗し、systemd が5秒ごとに再起動を試みる）。
 """)
 
 
