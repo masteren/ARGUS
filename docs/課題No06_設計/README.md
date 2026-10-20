@@ -5,8 +5,8 @@ Teams 課題「[IH19 / 課題No06]設計」に提出する3点。期限は 2026�
 
 | 提出物 | ファイル | 内容 |
 | --- | --- | --- |
-| DB設計（ER図） | [ER図_ARGUS.png](ER図_ARGUS.png) | SQLite `argus.db` の4テーブル（`detections` / `transactions` / `command_queue` / `missions`）と関連 |
-| 画面遷移図 | [画面遷移図_ARGUS.png](画面遷移図_ARGUS.png) | 観客スマホ・会場モニタ・運営PC の3系統と、画面を持たない API・映像の経路 |
+| DB設計（ER図） | [ER図_ARGUS.png](ER図_ARGUS.png) | SQLite `argus.db` の6テーブル（`users` / `purchases` / `transactions` / `command_queue` / `missions` / `detections`）と関連 |
+| 画面遷移図 | [画面遷移図_ARGUS.png](画面遷移図_ARGUS.png) | 観客スマホ（ログイン・チケット購入・操作）・会場モニタ・運営PC の3系統と、画面を持たない API・映像の経路 |
 | 画面設計書 | [画面設計書_ARGUS.pdf](画面設計書_ARGUS.pdf) | 16:9 で12ページ。実画面のキャプチャに番号を振り、要素とAPIを対応づけている |
 
 ## 作り方

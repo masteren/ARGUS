@@ -9,23 +9,46 @@
   #d { display:inline-block; }
 </style>
 </head><body>
-<p class="title">ARGUS ER図（SQLite / argus.db・全4テーブル）</p>
-<p class="sub">体験チケット（模擬通貨）の消費から、ロボット命令の実行完了・ミッション成功までを1本の履歴として追跡できる構造</p>
+<p class="title">ARGUS ER図（SQLite / argus.db・全6テーブル）</p>
+<p class="sub">会員登録・チケット購入（模擬決済）から、チケット消費・ロボット命令の実行完了・ミッション成功までを利用者単位で1本の履歴として追跡できる構造</p>
 <div id="d"><pre class="mermaid">
 erDiagram
+    users        ||--o{ purchases     : "購入するたびに1件"
+    users        ||--o{ transactions  : "チケットを使うたびに1件"
     transactions ||--|| command_queue : "取引1件につき命令1件を発行"
     transactions ||--o| missions      : "search_person のときだけ生成"
     command_queue ||--o| missions     : "巡回命令を保持(command_id)"
     detections   ||--o| missions      : "成功の根拠となった検出(detection_id)"
 
+    users {
+        INTEGER id PK "自動採番"
+        TEXT name UK "表示名 24文字まで（ランキングにも使う）"
+        TEXT pin_hash "4桁PINのハッシュ（平文は保存しない）"
+        INTEGER balance "チケット残高（0以上）"
+        TEXT created_at "登録日時"
+        TEXT last_login_at "最終ログイン日時"
+    }
+
+    purchases {
+        INTEGER id PK "自動採番"
+        INTEGER user_id FK "users.id"
+        TEXT payment_id "模擬決済ID dummy_xxxx"
+        TEXT pack "pack_500 / pack_1000"
+        INTEGER tickets "加算したチケット枚数 500/1000"
+        INTEGER price "表示価格（模擬円・実際の請求なし）"
+        TEXT status "paid"
+        TEXT created_at "購入日時"
+    }
+
     transactions {
         INTEGER id PK "自動採番"
-        TEXT payment_id "模擬決済ID dummy_xxxx"
+        INTEGER user_id FK "users.id（消費した利用者）"
+        TEXT payment_id "取引ID（残高から支払い）"
         TEXT timestamp "取引日時"
         INTEGER amount "消費チケット枚数 100/300/500"
         TEXT action "forward/turn_left/turn_right/bow/wave/search_person"
         TEXT action_label "前進 / お辞儀 など表示名"
-        TEXT payer_name "利用者名 24文字まで(未入力は匿名)"
+        TEXT payer_name "users.name の写し（ランキング集計用）"
         TEXT message "応援メッセージ 100文字まで"
         TEXT status "paid"
         TEXT created_at "登録日時"
@@ -67,10 +90,11 @@ erDiagram
     }
 </pre></div>
 <p class="note">
-<b>主キー</b>：全テーブル <code>id INTEGER PRIMARY KEY AUTOINCREMENT</code>／<b>外部キー制約</b>：<code>command_queue.transaction_id</code>・<code>missions.transaction_id</code> → <code>transactions(id)</code>（CREATE TABLE で宣言）。ただし SQLite は既定で外部キーを強制しないため、実際の整合はアプリ側で保つ。<br>
+<b>主キー</b>：全テーブル <code>id INTEGER PRIMARY KEY AUTOINCREMENT</code>／<b>外部キー制約</b>：<code>command_queue.transaction_id</code>・<code>missions.transaction_id</code> → <code>transactions(id)</code>、<code>purchases.user_id</code>・<code>transactions.user_id</code> → <code>users(id)</code>（CREATE TABLE で宣言）。ただし SQLite は既定で外部キーを強制しないため、実際の整合はアプリ側で保つ。<br>
 <b>論理参照</b>：<code>missions.command_id</code>・<code>missions.detection_id</code> は制約を宣言せず、アプリ側（<code>/pay</code>・<code>/upload</code>）で整合を取る。<br>
-<b>会員テーブルを置かない理由</b>：会員登録・ログインは Ver1.0 のスコープ外。利用者は毎回入力する <code>payer_name</code> で識別し、ランキングは <code>payer_name</code> の合計で集計する。<br>
-<b>金額について</b>：<code>amount</code> は体験チケット（模擬通貨）の枚数であり、実際の金銭は発生しない。実決済へ差し替える場合は <code>transactions.payment_id</code> と <code>status</code> を決済事業者の値に置き換える。
+<b>残高の整合</b>：<code>users.balance</code> は「<code>purchases.tickets</code> の合計 − <code>transactions.amount</code> の合計」と常に一致する。消費は <code>UPDATE users SET balance = balance - ? WHERE id = ? AND balance &gt;= ?</code> と取引・命令の登録を同一トランザクションで確定させ、残高が負になる消費は 402 で拒否する。<br>
+<b>payer_name を残す理由</b>：ランキング・ボード・ミッション表示は従来どおり <code>payer_name</code> で集計・表示する。登録時の名前を書き写すので、画像認識（A）と音声・実機（C）の側は変更不要。<br>
+<b>金額について</b>：チケットは模擬通貨で、1チケット＝¥1〈模擬〉として表示する。実際の金銭は発生しない。実決済へ差し替える場合は <code>purchases.payment_id</code> と <code>status</code> を決済事業者の値に置き換える。
 </p>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
 <script>
