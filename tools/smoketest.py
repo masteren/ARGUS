@@ -3,7 +3,7 @@
 """
 ARGUS ローカル結合スモークテスト — 三モジュールのデータ閉ループだけを検証する。
 
-    観客 --POST /pay--> B --GET /commands--> C(paid_poller の実コード) --> bridge
+    観客 --POST /auth/register・/purchase・/pay--> B --GET /commands--> C(paid_poller の実コード) --> bridge
                           <--POST /commands/{id}/done-- C
     B(missions: active) <--POST /upload type=mission_person-- A
     B --> /mission/latest = success, /overlay = bbox
@@ -57,8 +57,9 @@ MISSION_BBOX = [100, 80, 220, 400]
 MISSION_FRAME_WH = [640, 480]
 
 
-# B の PAY_MIN_INTERVAL_SEC と同じ既定値。B 側を変えたらここも合わせる。
+# B の PAY_MIN_INTERVAL_SEC / AUTH_MIN_INTERVAL_SEC と同じ既定値。B 側を変えたらここも合わせる。
 PAY_MIN_INTERVAL = float(os.environ.get("ARGUS_PAY_MIN_INTERVAL", "1.5"))
+AUTH_MIN_INTERVAL = float(os.environ.get("ARGUS_AUTH_MIN_INTERVAL", "1.0"))
 
 
 class SmokeFailure(Exception):
@@ -106,9 +107,20 @@ def get_json(path, **params):
     return resp.status_code, resp.json()
 
 
-def post_json(path, payload):
-    resp = requests.post(BASE_URL + path, json=payload, timeout=5)
+def post_json(path, payload, client=None):
+    """client に requests.Session を渡すと、そのセッション（＝ログイン状態）で送る。"""
+    resp = (client or requests).post(BASE_URL + path, json=payload, timeout=5)
     return resp.status_code, resp.json()
+
+
+def get_json_as(client, path):
+    resp = client.get(BASE_URL + path, timeout=5)
+    return resp.status_code, resp.json()
+
+
+def wait_auth_interval():
+    """ログイン・登録は同一IPからの連打を弾くので、続けて送るときは間を空ける。"""
+    time.sleep(AUTH_MIN_INTERVAL + 0.1)
 
 
 # ==================================================
@@ -324,12 +336,80 @@ def run_checks():
         "status=%s body=%r" % (status, body),
     )
 
-    # ── 課金 → C → bridge → done ────────────────────
-    section("[2] 観客 → B(/pay) → C(実 poller) → bridge → B(/commands/{id}/done)")
-    status, pay = post_json("/pay", {"payer_name": "smoke_taro", "action": "forward"})
+    # ── ログイン → 購入 → 消費 → C → bridge → done ─────
+    section("[2] 観客：ログイン → チケット購入（模擬決済）→ B(/pay) → C(実 poller) → bridge → done")
+    taro = requests.Session()
+
+    status, body = post_json("/pay", {"action": "forward"}, taro)
     check(
-        "POST /pay action=forward が受理された",
-        status == 200 and pay.get("ok") is True and pay.get("command_id"),
+        "未ログインの /pay は 401 で弾かれる",
+        status == 401 and body.get("ok") is False and body.get("login_required") is True,
+        "status=%s body=%r" % (status, body),
+    )
+
+    status, body = post_json("/auth/register", {"name": "x" * 100, "pin": "1234"}, taro)
+    check(
+        "長すぎる名前の登録は 400 で弾かれる",
+        status == 400 and body.get("ok") is False,
+        "status=%s body=%r" % (status, body),
+    )
+    status, body = post_json("/auth/register", {"name": "smoke_taro", "pin": "12a4"}, taro)
+    check(
+        "数字4桁でない PIN は 400 で弾かれる",
+        status == 400 and body.get("ok") is False,
+        "status=%s body=%r" % (status, body),
+    )
+
+    status, body = post_json("/auth/register", {"name": "smoke_taro", "pin": "1234"}, taro)
+    check(
+        "POST /auth/register で会員登録でき、残高 0 でログイン状態になる",
+        status == 200 and body.get("ok") is True and (body.get("user") or {}).get("balance") == 0,
+        "status=%s body=%r" % (status, body),
+    )
+    status, body = get_json_as(taro, "/me")
+    check(
+        "/me が logged_in=true と名前を返す",
+        body.get("logged_in") is True and body["user"]["name"] == "smoke_taro",
+        "status=%s body=%r" % (status, body),
+    )
+
+    wait_auth_interval()
+    status, body = post_json("/auth/register", {"name": "smoke_taro", "pin": "9999"})
+    check(
+        "同じ名前での再登録は 409 で弾かれる",
+        status == 409 and body.get("ok") is False,
+        "status=%s body=%r" % (status, body),
+    )
+
+    status, body = post_json("/pay", {"action": "forward"}, taro)
+    check(
+        "残高 0 の /pay は 402（チケット不足）で弾かれ、取引は作られない",
+        status == 402 and body.get("ok") is False and body.get("balance") == 0,
+        "status=%s body=%r" % (status, body),
+    )
+
+    status, body = post_json("/purchase", {"pack": "pack_999"}, taro)
+    check(
+        "存在しないパックの購入は 400 で弾かれる",
+        status == 400 and body.get("ok") is False,
+        "status=%s body=%r" % (status, body),
+    )
+    status, body = post_json("/purchase", {"pack": "pack_500"}, taro)
+    check(
+        "POST /purchase pack_500 で模擬決済が通り、残高が 500 になる",
+        status == 200
+        and body.get("ok") is True
+        and body.get("balance") == 500
+        and str(body.get("payment_id", "")).startswith("dummy_"),
+        "status=%s body=%r" % (status, body),
+    )
+
+    # 直前の 402 も /pay の連打間隔に数えられるので、間を空けてから本番の1発目を撃つ
+    time.sleep(PAY_MIN_INTERVAL + 0.1)
+    status, pay = post_json("/pay", {"action": "forward"}, taro)
+    check(
+        "POST /pay action=forward が受理され、残高が 400 に減った",
+        status == 200 and pay.get("ok") is True and pay.get("command_id") and pay.get("balance") == 400,
         "status=%s body=%r" % (status, pay),
     )
     forward_command_id = pay["command_id"]
@@ -341,12 +421,14 @@ def run_checks():
     # interval=2秒）を挟んでから撃つと PAY_MIN_INTERVAL(1.5秒) を超えてしまい、
     # 2発目が正規の要求として 200 で通る。タイミング次第で通ったり落ちたりする
     # 不安定なテストになっていたので、1発目の直後へ移した。
-    # 429 は transactions に行を作らない（app.py は INSERT より前で返す）ため、
-    # [5] の課金集計は汚れない。
-    status, blocked = post_json("/pay", {"payer_name": "smoke_taro", "action": "forward"})
+    # 429 は残高を減らさず transactions に行も作らない（app.py は減算より前で返す）
+    # ため、[5] の集計は汚れない。
+    status, blocked = post_json("/pay", {"action": "forward"}, taro)
     check(
-        "連打（%.1f秒以内の再送）は 429 で弾かれる" % PAY_MIN_INTERVAL,
-        status == 429 and blocked.get("ok") is False,
+        "連打（%.1f秒以内の再送）は 429 で弾かれ、残高は減らない" % PAY_MIN_INTERVAL,
+        status == 429
+        and blocked.get("ok") is False
+        and get_json_as(taro, "/me")[1]["user"]["balance"] == 400,
         "status=%s body=%r" % (status, blocked),
     )
 
@@ -366,24 +448,55 @@ def run_checks():
         "%.0f 秒待っても pending のまま" % STEP_TIMEOUT,
     )
 
-    # 連打チェックは [2] の先頭（1発目の直後）へ移動した。ここまで来れば
-    # done 待ちで PAY_MIN_INTERVAL は過ぎているので、次は素通りして 400 に届く。
-    status, bad = post_json("/pay", {"payer_name": "x" * 100, "action": "forward"})
+    # ── ログアウト・再ログイン ─────────────────────
+    status, body = post_json("/auth/logout", {}, taro)
+    check("POST /auth/logout でログアウトできる", status == 200 and body.get("ok") is True)
+    status, body = post_json("/pay", {"action": "forward"}, taro)
     check(
-        "長すぎる名前は 400 で弾かれる",
-        status == 400 and bad.get("ok") is False,
-        "status=%s body=%r" % (status, bad),
+        "ログアウト後の /pay は 401 で弾かれる",
+        status == 401 and body.get("login_required") is True,
+        "status=%s body=%r" % (status, body),
+    )
+
+    wait_auth_interval()
+    status, body = post_json("/auth/login", {"name": "smoke_taro", "pin": "0000"}, taro)
+    check(
+        "PIN を間違えたログインは 401 で弾かれる",
+        status == 401 and body.get("ok") is False,
+        "status=%s body=%r" % (status, body),
+    )
+    wait_auth_interval()
+    status, body = post_json("/auth/login", {"name": "smoke_taro", "pin": "1234"}, taro)
+    check(
+        "正しい PIN で再ログインでき、残高 400 が引き継がれている",
+        status == 200 and body.get("ok") is True and body["user"]["balance"] == 400,
+        "status=%s body=%r" % (status, body),
     )
 
     # 間隔を空ければ通常どおり受理される（＝締め出しではない）
     time.sleep(PAY_MIN_INTERVAL + 0.1)
 
     # ── ミッション開始 ──────────────────────────────
-    section("[3] 課金 search_person → ミッションが active になる")
-    status, pay = post_json("/pay", {"payer_name": "smoke_hanako", "action": "search_person"})
+    section("[3] 別の観客が購入して search_person（500）→ ミッションが active になる")
+    hanako = requests.Session()
+    wait_auth_interval()
+    status, body = post_json("/auth/register", {"name": "smoke_hanako", "pin": "5678"}, hanako)
     check(
-        "POST /pay action=search_person が受理された",
-        status == 200 and pay.get("ok") is True,
+        "smoke_hanako が会員登録できた",
+        status == 200 and body.get("ok") is True,
+        "status=%s body=%r" % (status, body),
+    )
+    status, body = post_json("/purchase", {"pack": "pack_500"}, hanako)
+    check(
+        "smoke_hanako が pack_500 を購入できた（残高 500）",
+        status == 200 and body.get("balance") == 500,
+        "status=%s body=%r" % (status, body),
+    )
+
+    status, pay = post_json("/pay", {"action": "search_person"}, hanako)
+    check(
+        "POST /pay action=search_person が受理され、残高がちょうど 0 になる",
+        status == 200 and pay.get("ok") is True and pay.get("balance") == 0,
         "status=%s body=%r" % (status, pay),
     )
 
@@ -451,12 +564,12 @@ def run_checks():
     )
 
     # ── 決済台帳 ────────────────────────────────────
-    section("[5] transactions の状態が paid（/api/ranking で間接確認）")
+    section("[5] transactions の状態が paid（/api/ranking で間接確認）・残高の整合")
     status, body = get_json("/api/ranking")
     ranking = body.get("ranking") or []
     totals = {r["payer_name"]: r["total_amount"] for r in ranking}
     check(
-        "/api/ranking（status='paid' のみ集計）に2件の課金が載っている",
+        "/api/ranking（status='paid' のみ集計）に2件の取引が載っている",
         status == 200 and body.get("ok") is True and len(ranking) >= 2,
         "status=%s body=%r" % (status, body),
     )
@@ -474,6 +587,26 @@ def run_checks():
         "内訳が正しい: smoke_taro=100(forward), smoke_hanako=500(search_person)",
         totals.get("smoke_taro") == 100 and totals.get("smoke_hanako") == 500,
         "集計 = %r" % (totals,),
+    )
+
+    # 残高 ＝ 購入したチケットの合計 − 消費したチケットの合計（ER図の注記どおり）
+    import sqlite3
+    con = sqlite3.connect(str(DB_PATH))
+    try:
+        rows = con.execute(
+            """
+            SELECT u.name, u.balance,
+                   COALESCE((SELECT SUM(tickets) FROM purchases p WHERE p.user_id = u.id), 0),
+                   COALESCE((SELECT SUM(amount) FROM transactions t WHERE t.user_id = u.id), 0)
+            FROM users u ORDER BY u.id
+            """
+        ).fetchall()
+    finally:
+        con.close()
+    check(
+        "全会員で 残高 = 購入合計 − 消費合計（smoke_taro 400 / smoke_hanako 0）",
+        rows == [("smoke_taro", 400, 500, 100), ("smoke_hanako", 0, 500, 500)],
+        "users = %r" % (rows,),
     )
 
 

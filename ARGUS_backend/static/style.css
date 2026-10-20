@@ -1551,3 +1551,349 @@ body.ranking-page::before {
     letter-spacing: .04em;
     color: rgba(255, 255, 255, .45);
 }
+
+
+/* ==================================================
+   公開ページ：アカウント欄・ログイン／チケット購入パネル
+   （要件定義書 機能2・3。ページは遷移させずにパネルで完結させる）
+   ================================================== */
+
+.public-page [hidden] {
+    display: none !important;
+}
+
+.public-page .account-area {
+    align-content: center;
+}
+
+.public-page .account-guest,
+.public-page .account-member {
+    display: grid;
+    gap: 8px;
+}
+
+.public-page .account-hint,
+.public-page .account-name,
+.public-page .account-balance {
+    margin: 0;
+    font-size: 12px;
+    color: #cbd5e1;
+}
+
+.public-page .account-hint strong {
+    color: #67e8f9;
+}
+
+.public-page .account-name span {
+    color: #f8fafc;
+    font-weight: 700;
+    font-size: 15px;
+}
+
+.public-page .account-balance strong {
+    color: #67e8f9;
+    font-size: 26px;
+    text-shadow: 0 0 12px rgba(103, 232, 249, 0.45);
+}
+
+.public-page .account-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+.public-page .account-button {
+    min-height: 42px;
+    padding: 0 12px;
+
+    border-radius: 10px;
+    border: 1px solid rgba(125, 211, 252, 0.45);
+
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.public-page .account-button.primary {
+    border: none;
+    color: #fff;
+    background: linear-gradient(135deg, #0e7490, #06b6d4);
+    box-shadow: 0 0 14px rgba(6, 182, 212, 0.3);
+}
+
+.public-page .account-button.ghost {
+    color: #e2e8f0;
+    background: rgba(2, 6, 23, 0.55);
+}
+
+.public-page .account-button:hover {
+    filter: brightness(1.12);
+}
+
+.public-page .account-link {
+    padding: 0;
+    border: none;
+    background: none;
+
+    color: #93c5fd;
+    font-family: inherit;
+    font-size: 11px;
+    text-align: left;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+/* ── パネル（モーダル）──────────────────────────── */
+.public-page .modal {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+
+    background: rgba(2, 6, 23, 0.68);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+}
+
+.public-page .modal-card {
+    width: min(440px, 100%);
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
+    padding: 18px 20px 20px;
+    box-sizing: border-box;
+
+    background: rgba(8, 20, 40, 0.96);
+    border: 1px solid rgba(125, 211, 252, 0.45);
+    border-radius: 16px;
+    box-shadow: 0 0 36px rgba(56, 189, 248, 0.25);
+}
+
+.public-page .modal-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 12px;
+}
+
+.public-page .modal-label {
+    margin: 0;
+    font-size: 11px;
+    color: #67e8f9;
+    letter-spacing: 1.5px;
+}
+
+.public-page .modal-head h3 {
+    margin: 4px 0 0;
+    font-size: 20px;
+}
+
+.public-page .modal-close {
+    width: 36px;
+    height: 36px;
+    border: 1px solid rgba(148, 163, 184, 0.38);
+    border-radius: 10px;
+    background: transparent;
+    color: #e2e8f0;
+    font-size: 20px;
+    cursor: pointer;
+}
+
+.public-page .tab-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    margin-bottom: 14px;
+    border: 1px solid rgba(125, 211, 252, 0.35);
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.public-page .tab-button {
+    height: 40px;
+    border: none;
+    background: rgba(2, 6, 23, 0.5);
+    color: #94a3b8;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.public-page .tab-button.active {
+    background: rgba(6, 182, 212, 0.22);
+    color: #e0f2fe;
+}
+
+.public-page .modal-form {
+    display: grid;
+    gap: 6px;
+}
+
+.public-page .modal-form label {
+    margin-top: 6px;
+    font-size: 12px;
+    color: #cbd5e1;
+}
+
+.public-page .modal-form input {
+    height: 46px;
+    padding: 0 14px;
+    box-sizing: border-box;
+
+    background: rgba(2, 6, 23, 0.72);
+    color: #e5e7eb;
+    border: 1px solid rgba(148, 163, 184, 0.38);
+    border-radius: 10px;
+
+    font-family: inherit;
+    font-size: 16px;   /* iOS はこれ未満だと入力時に自動ズームする */
+}
+
+.public-page #auth_pin {
+    letter-spacing: 8px;
+}
+
+.public-page .modal-note {
+    margin: 8px 0 0;
+    font-size: 12px;
+    color: #94a3b8;
+    line-height: 1.6;
+}
+
+.public-page .modal-note strong {
+    color: #67e8f9;
+}
+
+.public-page .modal-error {
+    min-height: 1em;
+    margin: 6px 0 0;
+    color: #fca5a5;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.public-page .modal-submit {
+    min-height: 48px;
+    margin-top: 6px;
+    border: none;
+    border-radius: 12px;
+
+    background: linear-gradient(135deg, #1d4ed8, #2563eb, #06b6d4);
+    color: #fff;
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.public-page .modal-submit:disabled {
+    filter: grayscale(0.4) brightness(0.8);
+    cursor: progress;
+}
+
+.public-page .mock-notice {
+    margin: 0 0 12px;
+    padding: 8px 10px;
+    border: 1px solid rgba(250, 204, 21, 0.45);
+    border-radius: 10px;
+    background: rgba(250, 204, 21, 0.08);
+    color: #fde68a;
+    font-size: 12px;
+}
+
+.public-page .pack-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.public-page .pack-card {
+    display: grid;
+    gap: 4px;
+    padding: 14px 12px;
+
+    border: 1px solid rgba(125, 211, 252, 0.45);
+    border-radius: 12px;
+    background: rgba(14, 116, 144, 0.18);
+
+    color: #e2e8f0;
+    font-family: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.public-page .pack-card:hover {
+    background: rgba(14, 116, 144, 0.32);
+}
+
+.public-page .pack-tickets {
+    font-size: 13px;
+    color: #67e8f9;
+    font-weight: 700;
+}
+
+.public-page .pack-price {
+    font-size: 24px;
+}
+
+.public-page .pack-price small {
+    margin-left: 2px;
+    font-size: 11px;
+    color: #fde68a;
+}
+
+.public-page .pack-desc {
+    font-size: 11px;
+    color: #94a3b8;
+}
+
+.public-page .confirm-title {
+    margin: 0 0 8px;
+    font-weight: 700;
+}
+
+.public-page .confirm-list {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 8px 16px;
+    margin: 0;
+    padding: 12px 14px;
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    border-radius: 10px;
+    background: rgba(2, 6, 23, 0.5);
+    font-size: 14px;
+}
+
+.public-page .confirm-list dt {
+    color: #94a3b8;
+}
+
+.public-page .confirm-list dd {
+    margin: 0;
+    text-align: right;
+    font-weight: 700;
+}
+
+.public-page .modal-actions {
+    display: grid;
+    grid-template-columns: 1fr 1.6fr;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.public-page .modal-actions .modal-submit,
+.public-page .modal-actions .account-button {
+    margin-top: 0;
+    min-height: 48px;
+}
+
+@media (max-width: 380px) {
+    .public-page .pack-grid {
+        grid-template-columns: 1fr;
+    }
+}

@@ -118,12 +118,26 @@
             <p>TICKET TO CONTROL</p>
             <h2>体験チケットでARGUSを操作</h2>
             <p class="ticket-notice">
-                ※ 体験チケットは<strong>模擬通貨</strong>です。実際の金銭は発生しません。
+                ※ 体験チケットは<strong>模擬通貨</strong>です。購入は模擬決済で、実際の請求は発生しません。
             </p>
         </div>
 
-        <div class="form-area">
-            <input type="text" id="payer_name" placeholder="名前を入力" maxlength="24" autocomplete="off">
+        <!-- アカウント欄：未ログインなら「ログインして操作する」、ログイン中なら名前と残高 -->
+        <div class="form-area account-area">
+            <div class="account-guest" id="account_guest" {% if user %}hidden{% endif %}>
+                <p class="account-hint">操作するには<strong>ログイン</strong>してください</p>
+                <button type="button" class="account-button primary" id="open_login" onclick="openLogin('login')">ログインして操作する</button>
+                <button type="button" class="account-link" onclick="openLogin('register')">はじめての方は新規登録</button>
+            </div>
+
+            <div class="account-member" id="account_member" {% if not user %}hidden{% endif %}>
+                <p class="account-name"><span id="account_name">{{ user["name"] if user else "" }}</span> さん</p>
+                <p class="account-balance">残高 <strong id="account_balance">{{ user["balance"] if user else 0 }}</strong> TKT</p>
+                <div class="account-actions">
+                    <button type="button" class="account-button primary" id="open_shop" onclick="openShop()">チケットを購入</button>
+                    <button type="button" class="account-button ghost" id="logout_button" onclick="logout(false)">体験を終える</button>
+                </div>
+            </div>
         </div>
 
         <div class="action-grid">
@@ -141,6 +155,281 @@
 
 </main>
 
+<!-- ログイン・新規登録パネル（ページは遷移させない） -->
+<div class="modal" id="login_modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="login_title">
+        <div class="modal-head">
+            <div>
+                <p class="modal-label">ACCOUNT</p>
+                <h3 id="login_title">ログイン</h3>
+            </div>
+            <button type="button" class="modal-close" onclick="closeModals()" aria-label="閉じる">×</button>
+        </div>
+
+        <div class="tab-row" role="tablist">
+            <button type="button" class="tab-button" id="tab_login" role="tab" onclick="setAuthMode('login')">ログイン</button>
+            <button type="button" class="tab-button" id="tab_register" role="tab" onclick="setAuthMode('register')">新規登録</button>
+        </div>
+
+        <form id="auth_form" class="modal-form" onsubmit="submitAuth(event)" autocomplete="off">
+            <label for="auth_name">名前（24文字まで・ランキングに表示されます）</label>
+            <input type="text" id="auth_name" maxlength="24" autocomplete="off" required>
+
+            <label for="auth_pin">PIN（数字4桁）</label>
+            <input type="password" id="auth_pin" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="off" required>
+
+            <p class="modal-note" id="auth_note"></p>
+            <p class="modal-error" id="auth_error" role="alert"></p>
+
+            <button type="submit" class="modal-submit" id="auth_submit">ログインする</button>
+        </form>
+    </div>
+</div>
+
+<!-- チケット購入パネル（模擬決済）：パック選択 → 確認 → 確定 -->
+<div class="modal" id="shop_modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="shop_title">
+        <div class="modal-head">
+            <div>
+                <p class="modal-label">TICKET SHOP</p>
+                <h3 id="shop_title">チケット購入</h3>
+            </div>
+            <button type="button" class="modal-close" onclick="closeModals()" aria-label="閉じる">×</button>
+        </div>
+
+        <p class="mock-notice">※ 模擬決済です。実際の請求はありません。</p>
+
+        <div id="shop_select">
+            <p class="modal-note">現在の残高 <strong id="shop_balance">0</strong> TKT</p>
+            <div class="pack-grid">
+                {% for pack_code, pack in packs.items() %}
+                <button type="button" class="pack-card" data-pack="{{ pack_code }}" onclick="choosePack('{{ pack_code }}')">
+                    <span class="pack-tickets">{{ pack.label }}</span>
+                    <strong class="pack-price">¥{{ "{:,}".format(pack.price) }}<small>〈模擬〉</small></strong>
+                    <small class="pack-desc">{{ pack.description }}</small>
+                </button>
+                {% endfor %}
+            </div>
+            <p class="modal-error" id="shop_error" role="alert"></p>
+        </div>
+
+        <div id="shop_confirm" hidden>
+            <p class="confirm-title">購入内容の確認</p>
+            <dl class="confirm-list">
+                <dt>パック</dt><dd id="confirm_pack">-</dd>
+                <dt>模擬価格</dt><dd id="confirm_price">-</dd>
+                <dt>購入後の残高</dt><dd id="confirm_after">-</dd>
+            </dl>
+            <p class="modal-error" id="confirm_error" role="alert"></p>
+            <div class="modal-actions">
+                <button type="button" class="account-button ghost" onclick="backToPacks()">戻る</button>
+                <button type="button" class="modal-submit" id="confirm_submit" onclick="confirmPurchase()">購入を確定する</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ==================================================
+// ログイン・チケット購入（要件定義書 機能2・3）
+// どちらも公開ページ上のパネルで完結させ、ページは遷移させない。
+// 名前などはすべて textContent で入れる（観客が入力した文字列なのでHTMLとして扱わない）。
+// ==================================================
+const PACKS = {{ packs|tojson }};
+let currentUser = {{ user|tojson }};
+let authMode = "login";
+let chosenPack = null;
+
+const IDLE_LOGOUT_MS = 60000;   // 共用端末：60秒操作がなければ自動でログアウト
+let idleTimer = null;
+
+const resultEl = document.getElementById("result");
+
+function showResult(text) {
+    resultEl.textContent = text;
+}
+
+function renderAccount() {
+    const loggedIn = !!currentUser;
+    document.getElementById("account_guest").hidden = loggedIn;
+    document.getElementById("account_member").hidden = !loggedIn;
+    if (loggedIn) {
+        document.getElementById("account_name").textContent = currentUser.name;
+        document.getElementById("account_balance").textContent = currentUser.balance;
+        document.getElementById("shop_balance").textContent = currentUser.balance;
+    }
+    resetIdle();
+}
+
+function setBalance(balance) {
+    if (currentUser && typeof balance === "number") {
+        currentUser.balance = balance;
+        renderAccount();
+    }
+}
+
+function closeModals() {
+    document.querySelectorAll(".modal").forEach(m => { m.hidden = true; });
+}
+
+// ── ログイン・新規登録 ──────────────────────────────
+function setAuthMode(mode) {
+    authMode = mode;
+    const isLogin = mode === "login";
+    document.getElementById("login_title").textContent = isLogin ? "ログイン" : "新規登録";
+    document.getElementById("auth_submit").textContent = isLogin ? "ログインする" : "登録してはじめる";
+    document.getElementById("auth_note").textContent = isLogin
+        ? "登録した名前とPINを入力してください。"
+        : "名前とPINを決めてください。PINはログインのときに使います。";
+    document.getElementById("tab_login").classList.toggle("active", isLogin);
+    document.getElementById("tab_register").classList.toggle("active", !isLogin);
+    document.getElementById("tab_login").setAttribute("aria-selected", String(isLogin));
+    document.getElementById("tab_register").setAttribute("aria-selected", String(!isLogin));
+    document.getElementById("auth_error").textContent = "";
+}
+
+function openLogin(mode) {
+    closeModals();
+    setAuthMode(mode || "login");
+    document.getElementById("auth_pin").value = "";
+    document.getElementById("login_modal").hidden = false;
+    document.getElementById("auth_name").focus();
+}
+
+function submitAuth(event) {
+    event.preventDefault();
+    const name = document.getElementById("auth_name").value;
+    const pin = document.getElementById("auth_pin").value;
+    const errorEl = document.getElementById("auth_error");
+    const submit = document.getElementById("auth_submit");
+
+    errorEl.textContent = "";
+    submit.disabled = true;
+
+    fetch(authMode === "login" ? "/auth/login" : "/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name, pin: pin })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (!data.ok) {
+            errorEl.textContent = data.error;
+            return;
+        }
+        currentUser = data.user;
+        document.getElementById("auth_name").value = "";
+        document.getElementById("auth_pin").value = "";
+        closeModals();
+        renderAccount();
+        showResult(currentUser.balance > 0
+            ? "ようこそ " + currentUser.name + " さん。アクションを選んでください。"
+            : "ようこそ " + currentUser.name + " さん。まずはチケットを購入してください。");
+        if (currentUser.balance === 0) {
+            openShop();
+        }
+    })
+    .catch(() => { errorEl.textContent = "通信エラーが発生しました"; })
+    .finally(() => { submit.disabled = false; });
+}
+
+function logout(auto) {
+    fetch("/auth/logout", { method: "POST" }).catch(() => {});
+    currentUser = null;
+    clearTimeout(idleTimer);
+    closeModals();
+    renderAccount();
+    showResult(auto
+        ? "60秒間操作がなかったため、ログアウトしました。"
+        : "ご利用ありがとうございました。次の方はログインしてください。");
+}
+
+// 無操作の検知。画面に触れるたびに数え直す。
+function resetIdle() {
+    clearTimeout(idleTimer);
+    if (currentUser) {
+        idleTimer = setTimeout(() => logout(true), IDLE_LOGOUT_MS);
+    }
+}
+
+["pointerdown", "keydown", "touchstart", "scroll"].forEach(ev => {
+    window.addEventListener(ev, resetIdle, { passive: true });
+});
+
+// ── チケット購入（模擬決済）──────────────────────────
+function openShop(message) {
+    if (!currentUser) {
+        openLogin("login");
+        return;
+    }
+    closeModals();
+    backToPacks();
+    document.getElementById("shop_error").textContent = message || "";
+    document.getElementById("shop_balance").textContent = currentUser.balance;
+    document.getElementById("shop_modal").hidden = false;
+}
+
+function choosePack(code) {
+    const pack = PACKS[code];
+    chosenPack = code;
+    document.getElementById("confirm_pack").textContent = pack.label;
+    document.getElementById("confirm_price").textContent =
+        "¥" + pack.price.toLocaleString("ja-JP") + "〈模擬〉";
+    document.getElementById("confirm_after").textContent =
+        (currentUser.balance + pack.tickets).toLocaleString("ja-JP") + " TKT";
+    document.getElementById("confirm_error").textContent = "";
+    document.getElementById("shop_select").hidden = true;
+    document.getElementById("shop_confirm").hidden = false;
+}
+
+function backToPacks() {
+    chosenPack = null;
+    document.getElementById("shop_select").hidden = false;
+    document.getElementById("shop_confirm").hidden = true;
+}
+
+function confirmPurchase() {
+    if (!chosenPack) {
+        return;
+    }
+    const submit = document.getElementById("confirm_submit");
+    const errorEl = document.getElementById("confirm_error");
+    submit.disabled = true;
+    errorEl.textContent = "";
+
+    fetch("/purchase", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pack: chosenPack })
+    })
+    .then(r => r.json().then(data => ({ status: r.status, data: data })))
+    .then(({ status, data }) => {
+        if (status === 401) {
+            currentUser = null;
+            renderAccount();
+            openLogin("login");
+            return;
+        }
+        if (!data.ok) {
+            errorEl.textContent = data.error;
+            return;
+        }
+        setBalance(data.balance);
+        closeModals();
+        showResult(PACKS[data.pack].label + "を追加しました（模擬決済・実際の請求はありません）。");
+    })
+    .catch(() => { errorEl.textContent = "通信エラーが発生しました"; })
+    .finally(() => { submit.disabled = false; });
+}
+
+document.querySelectorAll(".modal").forEach(m => {
+    m.addEventListener("click", e => { if (e.target === m) closeModals(); });
+});
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeModals(); });
+
+renderAccount();
+</script>
+
 <script>
 // ==================================================
 // 体験チケットの消費
@@ -154,12 +443,14 @@ function setButtonsEnabled(enabled) {
 }
 
 function pay(action) {
-    const nameInput = document.getElementById("payer_name");
-    const payerName = nameInput.value;
-    const result = document.getElementById("result");
+    if (!currentUser) {
+        showResult("操作するにはログインしてください。");
+        openLogin("login");
+        return;
+    }
 
     setButtonsEnabled(false);
-    result.textContent = "チケットを確認しています...";
+    showResult("チケットを確認しています...");
 
     fetch("/pay", {
         method: "POST",
@@ -167,26 +458,33 @@ function pay(action) {
             "Content-Type": "application/json"
         },
         body: JSON.stringify({
-            payer_name: payerName,
             message: "",
             action: action
         })
     })
-    .then(response => response.json())
-    .then(data => {
+    .then(response => response.json().then(data => ({ status: response.status, data: data })))
+    .then(({ status, data }) => {
         if (data.ok) {
-            result.textContent =
+            setBalance(data.balance);
+            showResult(
                 data.payer_name + "さんの「" +
-                data.action_label + "」を受け付けました。まもなく実行します。";
-            // 展示用の共用端末では次の人が名前を入れ直すので、送信後は空にする
-            nameInput.value = "";
+                data.action_label + "」を受け付けました。まもなく実行します。");
             refreshBoard();   // 自分の名前がその場でランキングに載る
+        } else if (status === 401) {
+            currentUser = null;
+            renderAccount();
+            showResult("ログインの有効期限が切れました。もう一度ログインしてください。");
+            openLogin("login");
+        } else if (status === 402) {
+            setBalance(data.balance);
+            showResult("ERROR: " + data.error);
+            openShop(data.error);   // 残高不足なら購入パネルへ案内する
         } else {
-            result.textContent = "ERROR: " + data.error;
+            showResult("ERROR: " + data.error);
         }
     })
     .catch(error => {
-        result.textContent = "通信エラーが発生しました";
+        showResult("通信エラーが発生しました");
         console.error(error);
     })
     .finally(() => {

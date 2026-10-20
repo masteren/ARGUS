@@ -2,6 +2,8 @@ import os, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 os.environ.setdefault("ARGUS_DB", os.path.join(HERE, "design.db"))  # 本番の argus.db は触らない
 os.environ["ARGUS_PAY_MIN_INTERVAL"] = "0"
+os.environ["ARGUS_AUTH_MIN_INTERVAL"] = "0"
+os.environ["ARGUS_SECRET_KEY"] = "design-capture-only"
 os.environ["PORT"] = "5077"
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "ARGUS_backend"))

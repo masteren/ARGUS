@@ -10,7 +10,12 @@
 |---|---|---|---|---|
 | POST | `/upload` | A → B | `{timestamp, type, confidence, image}` (+任意 `bbox`,`frame_wh`) | `{"ok":true, "detection_id":N, "mission_success":bool, "mission_id":N\|null}` |
 | GET  | `/events` | C, ダッシュボード | — | `{"ok":true, "events":[...]}` |
-| POST | `/pay` | 観客Web → B | `{action, payer_name, message}` | `{"ok":true, ...}` / 未定義 action・長すぎる入力は **400** / 連打・キュー飽和は **429** |
+| POST | `/auth/register` | 観客Web → B | `{name, pin}`（名前24文字まで・PIN数字4桁） | `{"ok":true, "user":{id,name,balance}}`＋セッション開始 / 入力不正は **400** / 名前の重複は **409** / 連打・PIN連続失敗は **429** |
+| POST | `/auth/login` | 観客Web → B | `{name, pin}` | `{"ok":true, "user":{id,name,balance}}`＋セッション開始 / 名前かPINが違えば **401** / 連打・PIN連続失敗は **429** |
+| POST | `/auth/logout` | 観客Web → B | — | `{"ok":true}` |
+| GET  | `/me` | 公開ページ | — | `{"ok":true, "logged_in":bool, "user":{id,name,balance}\|null}` |
+| POST | `/purchase` | 観客Web → B | `{pack}`（`pack_500` / `pack_1000`） | `{"ok":true, "purchase_id", "payment_id":"dummy_…", "tickets", "price", "balance"}` / 未ログインは **401** / 未定義パックは **400** / 連打は **429** |
+| POST | `/pay` | 観客Web → B | `{action, message}`（**要ログイン**。名前はログイン中の会員名を使う） | `{"ok":true, ..., "balance"}` / 未ログインは **401** / 未定義 action・長すぎる入力は **400** / **残高不足は 402**（`required`,`balance` 付き）/ 連打・キュー飽和は **429** |
 | POST | `/control` | 運営ダッシュボード → B | `{action}` | `{"ok":true, "command_id":N, "action_label":"…", "flushed":N}` / 未定義 action は **400** / 権限なしは **403** |
 | POST | `/battery` | C → B | `{load, pi}` | `{"ok":true}` / 数値でなければ **400** |
 | GET  | `/battery` | 公開ページ | — | `{"ok":true, "available":bool, "load", "pi", "level":0-100, "status":"good"\|"low"\|"critical", "age_sec"}` |
@@ -33,7 +38,10 @@
 | `PORT` | `5000` | B・A・C が同じ変数を読む。macOS の結合試験だけ `5001` に逃がす |
 | `ARGUS_DB` | `ARGUS_backend/argus.db` | 使い捨てDBを指せる（スモークテスト用） |
 | `ARGUS_DEBUG` | `0`（OFF） | 開発中だけ `1`。**展示では必ず OFF**（同一LANにデバッガを晒さない） |
-| `ARGUS_PAY_MIN_INTERVAL` | `1.5` | 同一IPからの `/pay` の最短間隔（秒）。連打対策 |
+| `ARGUS_PAY_MIN_INTERVAL` | `1.5` | 同一IPからの `/pay`・`/purchase` の最短間隔（秒）。連打対策 |
+| `ARGUS_AUTH_MIN_INTERVAL` | `1.0` | 同一IPからの `/auth/login`・`/auth/register` の最短間隔（秒）。同じ名前で PIN を5回続けて間違えると、その名前は60秒止まる |
+| `ARGUS_SECRET_KEY` | 起動ごとに乱数 | セッション Cookie の署名鍵。未設定だと B を再起動するたびに全員ログアウトになるので、展示では固定値を渡す |
+| `ARGUS_SESSION_IDLE_SEC` | `600` | サーバ側で見る無操作の上限（秒）。公開ページは JS が60秒の無操作で自分からログアウトするので、これは取りこぼし用の歯止め |
 | `ARGUS_ROBOT_HOST` | 未設定 | **実機のIP。B と C が同じ変数を読む。** C = 命令(5002)の送信先、B = カメラを Freenove の映像(8002)に切り替え＝ロボット一人称。未設定なら C は MockBridge、B はローカルUSBカメラ（どちらも実機なしで通る） |
 | `ARGUS_ROBOT_VIDEO_PORT` | `8002` | Freenove の映像ポート。通常変えない |
 | `ARGUS_STAFF_TOKEN` | 未設定 | `/control`（運営の直接操作）を別端末から使うための合言葉。未設定なら localhost のみ |
@@ -53,9 +61,34 @@ B の `app.py`、A の `detection_webcam.py`、C の `paid_poller.py` は同じ�
 5000 を掴むので、ローカル結合試験だけ `PORT=5001` で逃がす。
 B は `ARGUS_DB` で使い捨てDBも指定できる（未設定なら `ARGUS_backend/argus.db`）。
 
-### DBのテーブル（4つ）
+### DBのテーブル（6つ）
 
-`detections`（`bbox`,`frame_wh` 列を追加）/ `transactions` / `command_queue` / `missions`
+`users`（会員・PINハッシュ・残高）/ `purchases`（チケット購入＝模擬決済）/
+`transactions`（`user_id` 列を追加）/ `command_queue` / `missions` /
+`detections`（`bbox`,`frame_wh` 列を追加）
+
+列を足したテーブルは起動時に `ALTER TABLE` で移行するので、既存の `argus.db` は作り直さなくてよい。
+
+## 会員・チケット残高（2026-10 追加 / 要件定義書 機能2〜4）
+
+```
+観客：/auth/register か /auth/login ─→ セッション開始（Cookie）
+      /purchase {pack} ──模擬決済──→ purchases に1行 ＋ users.balance を加算
+      /pay {action}    ──────────→ users.balance を減算 ＋ transactions ＋ command_queue（＋ missions）
+```
+
+- **残高 ＝ 購入したチケットの合計 − 消費したチケットの合計。** `/pay` の減算は
+  `UPDATE users SET balance = balance - ? WHERE id = ? AND balance >= ?` で行い、
+  取引・命令の登録と同じトランザクションで確定させる。足りなければ何も書かずに **402**。
+  同時に押されても残高は負にならない。
+- **価格は表示用の模擬円**（1チケット＝¥1〈模擬〉）。`process_payment()` は外部に繋がず
+  `dummy_` で始まる決済IDを返すだけ。実決済へ差し替えるときはここだけを直す。
+- **`transactions.payer_name` は残す。** ログイン中の会員名を書き写すので、ランキング・
+  ボード・ミッション表示は従来どおり `payer_name` で動く。**A と C は変更不要。**
+- **公開ページは遷移させない。** ログイン・購入はページ上のパネルで行い `fetch` で結果だけ
+  反映する（再読込すると MJPEG が切れるため）。共用端末なので、「体験を終える」または
+  無操作60秒で自動ログアウトし、次の観客に名前と残高を残さない。
+- 運営の `/control` はログイン不要のまま（チケットも消費しない）。
 
 > ⚠️ **落とし穴（実際に起きていた不一致）**
 > - `/events` と `/commands` は **`{"ok":true, "events/commands":[...]}` で包まれている**。裸のリストではない。C の旧コードは裸リスト前提で **クラッシュしていた** → 修正済み。
@@ -90,7 +123,7 @@ B は `ARGUS_DB` で使い捨てDBも指定できる（未設定なら `ARGUS_ba
 
 ### 運営の直接操作 `/control`（展示の現場用）
 
-観客の `/pay` とは別経路。**チケットを消費せず、transactions にもランキングにも
+観客の `/pay` とは別経路。**ログイン不要で、チケットを消費せず、transactions にもランキングにも
 載らない**（`command_queue` に `source='staff'`、`transaction_id=NULL` で積むだけ）。
 C から見れば `/commands` に出てくる普通の命令なので、**C と A は変更不要**。
 

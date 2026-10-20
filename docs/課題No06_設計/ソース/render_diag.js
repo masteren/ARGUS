@@ -1,5 +1,5 @@
 const puppeteer = require('puppeteer-core');
-const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const CHROME = process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const file = process.argv[2], out = process.argv[3], w = +(process.argv[4]||1600), svgW = +(process.argv[5]||0);
 (async () => {
   const b = await puppeteer.launch({ executablePath: CHROME, headless:'new', args:['--hide-scrollbars'] });

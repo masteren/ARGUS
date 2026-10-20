@@ -59,9 +59,10 @@ bash tools/smoketest.sh
 `poll_paid_commands` を **そのまま import して** 回すので、本物のエンドポイントを叩いている。
 
 検証する経路：
-`/pay` → `/commands` → C の bridge → `/commands/{id}/done` →
-`/pay search_person` → `/mission/active` → `/upload type=mission_person` →
-`mission_success` / `/mission/latest` / `/overlay` → `/api/ranking`
+`/auth/register` → `/purchase`（模擬決済）→ `/pay`（残高減算）→ `/commands` → C の bridge →
+`/commands/{id}/done` → `/auth/logout`・`/auth/login` → `/pay search_person` → `/mission/active` →
+`/upload type=mission_person` → `mission_success` / `/mission/latest` / `/overlay` →
+`/api/ranking` → 残高 ＝ 購入合計 − 消費合計
 
 各ステップに ✓ / ✗ を出し、1つでも落ちれば終了コードは非0。終了時に B を停止し、
 使い捨てDB（`ARGUS_backend/argus.smoketest.db`）を消すので、本番の `argus.db` は触らない。
