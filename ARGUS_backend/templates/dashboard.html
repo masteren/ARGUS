@@ -10,7 +10,7 @@
 
 <header>
     <h1>ARGUS 管理ダッシュボード</h1>
-    <p>検出履歴・取引履歴・ロボット命令を確認します</p>
+    <p>購入履歴・検出履歴・取引履歴・ロボット命令を確認します</p>
 </header>
 
 <main>
@@ -19,6 +19,11 @@
         <div class="summary-card">
             <h2>{{ total_sales }}</h2>
             <p>累計チケット（模擬通貨）</p>
+        </div>
+
+        <div class="summary-card">
+            <h2>¥{{ "{:,}".format(purchase_total) }}</h2>
+            <p>チケット購入（模擬決済）</p>
         </div>
 
         <div class="summary-card">
@@ -82,6 +87,36 @@
     </section>
 
     <section class="card">
+        <h2>購入履歴（模擬決済）</h2>
+
+        <table>
+            <tr>
+                <th>ID</th>
+                <th>日時</th>
+                <th>名前</th>
+                <th>パック</th>
+                <th>チケット</th>
+                <th>模擬価格</th>
+                <th>決済ID</th>
+                <th>状態</th>
+            </tr>
+
+            {% for p in purchases %}
+            <tr>
+                <td>{{ p.id }}</td>
+                <td>{{ p.created_at }}</td>
+                <td>{{ p.user_name }}</td>
+                <td>{{ p.pack }}</td>
+                <td>{{ p.tickets }}</td>
+                <td>¥{{ "{:,}".format(p.price) }}</td>
+                <td>{{ p.payment_id }}</td>
+                <td>{{ p.status }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+    </section>
+
+    <section class="card">
         <h2>取引履歴</h2>
 
         <table>
@@ -89,7 +124,7 @@
                 <th>ID</th>
                 <th>日時</th>
                 <th>名前</th>
-                <th>金額</th>
+                <th>消費チケット</th>
                 <th>アクション</th>
                 <th>状態</th>
             </tr>

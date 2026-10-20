@@ -2,3 +2,4 @@ design.db
 shots/
 doc/
 *.png
+run_app.log

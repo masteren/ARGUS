@@ -3,12 +3,12 @@
 > このファイルは「いま何がどうなっているか」を1枚で渡すためのもの。
 > 詳細の正本は [CONTRACT.md](../CONTRACT.md)（API）と
 > [要件定義書_ARGUS_Ver1.0.md](要件定義書_ARGUS_Ver1.0.md)（要件）。
-> 最終更新：2026年9月5日
+> 最終更新：2026年10月20日
 
 ## 1. 一言で
 
 6脚ロボット（Freenove Big Hexapod ＋ Raspberry Pi 5）を、観客が**体験チケット（模擬通貨）**を
-使って数十秒だけ操作できる展示作品。HEW の主題「お金が動く Web サービス」に対する回答が
+使って数十秒だけ操作できる展示作品。観客はその場で名前とPINを登録してログインし、チケットを購入（模擬決済）してから使う。HEW の主題「お金が動く Web サービス」に対する回答が
 Flask＋SQLite の取引処理レイヤで、そこに画像認識と音声対話を載せている。
 
 **歩行制御は Freenove 公式コードを無改造で使用**。自作するのは AI レイヤと IoT レイヤの2層。
@@ -26,18 +26,19 @@ Flask＋SQLite の取引処理レイヤで、そこに画像認識と音声対�
 
 | 使う言葉 | 使わない言葉 | 理由 |
 | --- | --- | --- |
-| 体験チケット（模擬通貨） | 課金・投げ銭・◯◯円 | 実際の金銭は動かない。紙のチケットを配り、重複使用は運営が目視で確認する |
+| 体験チケット（模擬通貨） | 課金・投げ銭 | 実際の金銭は動かない。購入は模擬決済で、残高はシステムが会員ごとに管理する |
+| ¥500〈模擬〉など模擬価格 | 〈模擬〉の付かない ◯◯円 | 購入画面の価格は1チケット＝¥1〈模擬〉。必ず「模擬決済・実際の請求はありません」と並べて出す |
 | 相棒ロボット / AI COMPANION | 監視ロボット・surveillance | 観客の相棒であって、観客を見張るものではない |
 | ミッション | — | `search_person` を消費すると発生し、人物発見で成功する状態付きタスク |
 
 ## 4. 構成（B を中心とするスター型）
 
 ```
-観客スマホ ──POST /pay──┐
+観客スマホ ──POST /auth/*・/purchase・/pay──┐
                         ▼
 A vision ──POST /upload──▶  B backend (Flask + SQLite)  ──/video_feed──▶ 公開ページ
- (YOLO)                     transactions / command_queue ──/overlay ────▶ (HUD描画)
-   ▲                        detections / missions        ──/api/ranking─▶ (ボード)
+ (YOLO)                     users / purchases / transactions ──/overlay ──▶ (HUD描画)
+   ▲                        command_queue / missions / detections ─/api/ranking─▶ (ボード)
    └──/video_feed───────────┤
                             │ GET /commands ─┐ POST /commands/{id}/done
                             ▼                ▼
@@ -52,7 +53,9 @@ A vision ──POST /upload──▶  B backend (Flask + SQLite)  ──/video_f
 **動いている**（`bash tools/smoketest.sh` で毎回検証できる。実機・カメラ・マイク・APIキー不要）
 
 - ライブ配信、YOLO 人物検出 → `/upload`（bbox 付き）
-- チケット消費 → 取引記録 → 命令キュー → C が実行 → 完了報告（閉ループ）
+- 会員登録・ログイン（名前＋PIN4桁、PINはハッシュ保存、無操作60秒で自動ログアウト）
+- チケット購入（模擬決済）→ 残高加算
+- チケット消費（残高減算・不足なら402）→ 取引記録 → 命令キュー → C が実行 → 完了報告（閉ループ）
 - `search_person` ミッション：消費で active → A が `/mission/active` を見て `mission_person` を上げる → success
 - 公開ページの HUD 検出枠、サポーターボード（ランキング＋直近の操作、5秒ごと更新）
 - スマホ縦画面レイアウト、入力検証、連打対策（同一IP 1.5秒＋未実行10件上限）、統一エラー形式
@@ -61,7 +64,6 @@ A vision ──POST /upload──▶  B backend (Flask + SQLite)  ──/video_f
 **未実装（Ver1.0 の残タスク）**
 
 - ミッション成功時の演出／チケットを使った人への通知（`/mission/latest` は用意済み、公開ページ側が未着手）
-- 券番号の発行とシステム側の使用済み判定（Ver1.0 は運営の目視確認で運用する方針）
 - 実機での検証：`turn_left/right` の角度符号、`wave`/`bow` の姿勢幅
 
 ## 6. 決め打ち（翻すなら CONTRACT.md も直す）

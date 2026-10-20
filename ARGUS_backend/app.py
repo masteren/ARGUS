@@ -1,6 +1,8 @@
-from flask import Flask, request, jsonify, render_template, redirect, url_for, Response
+from flask import Flask, request, jsonify, render_template, redirect, url_for, Response, session
 from werkzeug.exceptions import HTTPException
+from werkzeug.security import generate_password_hash, check_password_hash
 import sqlite3
+import secrets
 from pathlib import Path
 from datetime import datetime
 import uuid
@@ -46,6 +48,29 @@ MAX_MESSAGE_LEN = 100
 
 _last_pay_at = {}                 # client ip -> 最後に受理した時刻
 _pay_guard_lock = threading.Lock()
+
+# ── 会員登録・ログイン（要件定義書 機能2）────────────────────
+# ARGUS_SECRET_KEY : セッション Cookie の署名鍵。未設定なら起動ごとに乱数で作る
+#   （その場合 B を再起動すると全員ログアウトになる。展示では1日の中で
+#    再起動しても困らないよう、固定値を環境変数で渡しておくとよい）。
+# ARGUS_SESSION_IDLE_SEC : サーバ側で見る無操作の上限。公開ページは JS で
+#   60秒の無操作を検知して自分でログアウトするが、画面を閉じられた場合などの
+#   取りこぼしをここで受け止める。
+app.secret_key = os.environ.get("ARGUS_SECRET_KEY") or secrets.token_hex(32)
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+)
+SESSION_IDLE_SEC = int(os.environ.get("ARGUS_SESSION_IDLE_SEC", "600"))
+PIN_LENGTH = 4
+AUTH_MIN_INTERVAL_SEC = float(os.environ.get("ARGUS_AUTH_MIN_INTERVAL", "1.0"))  # 同一IPからのログイン・登録の最短間隔
+AUTH_MAX_FAILURES = 5             # 同じ名前で続けて PIN を間違えられる回数
+AUTH_LOCK_SEC = 60                # 上を超えたらその名前を一時的に止める秒数
+
+_last_auth_at = {}                # client ip -> 最後に受けたログイン・登録の時刻
+_last_purchase_at = {}            # client ip -> 最後に受けた購入の時刻
+_auth_failures = {}               # name -> (連続失敗回数, 最後に失敗した時刻)
+_auth_guard_lock = threading.Lock()
 
 CAMERA_INDEX = 0
 CAMERA_WIDTH = 640
@@ -111,6 +136,26 @@ MISSION_DETECTION_PREFIX = "mission_"
 
 
 # ==================================================
+# チケットパック（要件定義書 機能3）
+# price は表示用の模擬価格（1チケット＝¥1〈模擬〉）。実際の請求は発生しない。
+# ==================================================
+TICKET_PACKS = {
+    "pack_500": {
+        "label": "500チケット",
+        "tickets": 500,
+        "price": 500,
+        "description": "前進5回、または「人を探す」1回ぶん",
+    },
+    "pack_1000": {
+        "label": "1,000チケット",
+        "tickets": 1000,
+        "price": 1000,
+        "description": "いろいろな動きを試したい人向け",
+    },
+}
+
+
+# ==================================================
 # 共通処理
 # ==================================================
 def now_text():
@@ -166,6 +211,34 @@ def init_db():
     with get_connection() as con:
         cur = con.cursor()
 
+        # 会員（要件定義書 機能2）。PIN は平文で持たず、ハッシュだけを保存する。
+        # balance はチケット残高。購入で増え、/pay で減る。負にはならない。
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                pin_hash TEXT NOT NULL,
+                balance INTEGER NOT NULL DEFAULT 0 CHECK (balance >= 0),
+                created_at TEXT NOT NULL,
+                last_login_at TEXT
+            )
+            """)
+
+        # チケット購入（模擬決済）の履歴（要件定義書 機能3）
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS purchases (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                payment_id TEXT NOT NULL,
+                pack TEXT NOT NULL,
+                tickets INTEGER NOT NULL,
+                price INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+            """)
+
         # AI画像認識の検出履歴
         cur.execute("""
             CREATE TABLE IF NOT EXISTS detections (
@@ -180,10 +253,11 @@ def init_db():
             )
             """)
 
-        # 投げ銭 / 決済の履歴
+        # チケット消費（取引）の履歴。user_id は消費した会員。
         cur.execute("""
             CREATE TABLE IF NOT EXISTS transactions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER REFERENCES users(id),
                 payment_id TEXT NOT NULL,
                 timestamp TEXT NOT NULL,
                 amount INTEGER NOT NULL,
@@ -231,13 +305,15 @@ def init_db():
         # 既存DB（bbox列が無い頃のもの）を壊さずに移行する
         ensure_column(cur, "detections", "bbox", "TEXT")
         ensure_column(cur, "detections", "frame_wh", "TEXT")
+        # ログイン導入前の DB（transactions に user_id が無い頃のもの）も移行する
+        ensure_column(cur, "transactions", "user_id", "INTEGER REFERENCES users(id)")
 
         con.commit()
 
 
 # ==================================================
-# 模擬決済処理
-# 後でStripeなどに差し替え可能
+# 模擬決済処理（チケット購入 /purchase から呼ぶ）
+# 外部には接続しない。後で決済事業者に差し替えるときはここだけを直す。
 # ==================================================
 def process_payment(amount, payer_name):
     payment_id = "dummy_" + uuid.uuid4().hex[:12]
@@ -247,6 +323,79 @@ def process_payment(amount, payer_name):
         "payment_id": payment_id,
         "status": "paid",
     }
+
+
+# ==================================================
+# ログイン状態の扱い
+# セッションには user_id と最後に操作した時刻だけを入れる。名前や残高は
+# 毎回 DB から読む（セッションに残高を持つと、別タブとずれる）。
+# ==================================================
+def client_ip():
+    return request.remote_addr or "unknown"
+
+
+def too_fast(table, interval):
+    """同一IPからの連打なら True。受理した場合は時刻を記録する。"""
+    ip = client_ip()
+    now = time.time()
+    with _auth_guard_lock:
+        if now - table.get(ip, 0.0) < interval:
+            return True
+        table[ip] = now
+    return False
+
+
+def current_user():
+    """ログイン中の会員を返す。未ログイン・無操作で期限切れなら None。"""
+    user_id = session.get("user_id")
+    if not user_id:
+        return None
+
+    if time.time() - session.get("seen_at", 0) > SESSION_IDLE_SEC:
+        session.clear()
+        return None
+
+    with get_connection() as con:
+        user = con.execute(
+            "SELECT id, name, balance FROM users WHERE id = ?", (user_id,)
+        ).fetchone()
+
+    if user is None:
+        session.clear()
+        return None
+
+    session["seen_at"] = time.time()
+    return user
+
+
+def user_json(user):
+    return {"id": user["id"], "name": user["name"], "balance": user["balance"]}
+
+
+def login_required_response():
+    return jsonify(
+        {"ok": False, "error": "ログインしてください", "login_required": True}
+    ), 401
+
+
+def validate_credentials(data):
+    """名前と PIN を取り出して検証する。エラーなら (None, None, メッセージ)。"""
+    name = clean_text(data.get("name", ""))
+    pin = str(data.get("pin", "")).strip()
+
+    if not name:
+        return None, None, "名前を入力してください"
+    if len(name) > MAX_PAYER_NAME_LEN:
+        return None, None, "名前は%d文字までです" % MAX_PAYER_NAME_LEN
+    if len(pin) != PIN_LENGTH or not pin.isdigit():
+        return None, None, "PINは数字%d桁で入力してください" % PIN_LENGTH
+    return name, pin, None
+
+
+def start_session(user_id):
+    session.clear()
+    session["user_id"] = user_id
+    session["seen_at"] = time.time()
 
 
 # ==================================================
@@ -383,7 +532,7 @@ def video_feed():
 # ==================================================
 @app.route("/")
 def public_page():
-    """観客向け公開ページ。投げ銭操作、ライブ映像、ランキングを表示。"""
+    """観客向け公開ページ。ログイン・チケット購入・操作、ライブ映像、ランキングを表示。"""
     with get_connection() as con:
         cur = con.cursor()
 
@@ -406,11 +555,15 @@ def public_page():
             LIMIT 5
             """).fetchall()
 
+    user = current_user()
+
     return render_template(
         "public.html",
         actions=ACTIONS,
+        packs=TICKET_PACKS,
         transactions=transactions,
         ranking=ranking,
+        user=user_json(user) if user else None,
     )
 
 
@@ -441,6 +594,20 @@ def dashboard():
             LIMIT 20
             """).fetchall()
 
+        purchases = cur.execute("""
+            SELECT purchases.*, users.name AS user_name
+            FROM purchases
+            JOIN users ON users.id = purchases.user_id
+            ORDER BY purchases.id DESC
+            LIMIT 20
+            """).fetchall()
+
+        purchase_total = cur.execute("""
+            SELECT COALESCE(SUM(price), 0) AS total
+            FROM purchases
+            WHERE status = 'paid'
+            """).fetchone()["total"]
+
         total_sales = cur.execute("""
             SELECT COALESCE(SUM(amount), 0) AS total
             FROM transactions
@@ -463,6 +630,8 @@ def dashboard():
         detections=detections,
         transactions=transactions,
         commands=commands,
+        purchases=purchases,
+        purchase_total=purchase_total,
         total_sales=total_sales,
         transaction_count=transaction_count,
         pending_count=pending_count,
@@ -581,22 +750,207 @@ def get_events():
 # ==================================================
 # API：投げ銭 / ロボット操作命令
 # ==================================================
+# ==================================================
+# 会員登録・ログイン（要件定義書 機能2）
+# 公開ページのパネルから fetch で呼ぶ。ページは遷移させない（MJPEG が切れるため）。
+# ==================================================
+def auth_guard(name):
+    """連打と PIN の総当たりを止める。止めるなら (応答, ステータス) を返す。"""
+    if too_fast(_last_auth_at, AUTH_MIN_INTERVAL_SEC):
+        return jsonify(
+            {"ok": False, "error": "操作が速すぎます。少し待ってからもう一度お願いします"}
+        ), 429
+
+    with _auth_guard_lock:
+        count, last = _auth_failures.get(name, (0, 0.0))
+        if count >= AUTH_MAX_FAILURES and time.time() - last < AUTH_LOCK_SEC:
+            return jsonify(
+                {"ok": False, "error": "PINを続けて間違えたため、%d秒ほど待ってください" % AUTH_LOCK_SEC}
+            ), 429
+    return None
+
+
+def record_auth_failure(name):
+    with _auth_guard_lock:
+        count, _ = _auth_failures.get(name, (0, 0.0))
+        _auth_failures[name] = (count + 1, time.time())
+
+
+@app.route("/auth/register", methods=["POST"])
+def auth_register():
+    """観客：名前と PIN で会員登録し、そのままログインする。"""
+    data = request.get_json(silent=True) or request.form
+    name, pin, error = validate_credentials(data)
+    if error:
+        return jsonify({"ok": False, "error": error}), 400
+
+    blocked = auth_guard(name)
+    if blocked:
+        return blocked
+
+    created_at = now_text()
+    try:
+        with get_connection() as con:
+            cur = con.execute(
+                """
+                INSERT INTO users (name, pin_hash, balance, created_at, last_login_at)
+                VALUES (?, ?, 0, ?, ?)
+                """,
+                (name, generate_password_hash(pin), created_at, created_at),
+            )
+            user_id = cur.lastrowid
+            con.commit()
+    except sqlite3.IntegrityError:
+        return jsonify(
+            {"ok": False, "error": "その名前はすでに使われています。ログインするか別の名前にしてください"}
+        ), 409
+
+    start_session(user_id)
+    return jsonify(
+        {"ok": True, "user": {"id": user_id, "name": name, "balance": 0}}
+    )
+
+
+@app.route("/auth/login", methods=["POST"])
+def auth_login():
+    """観客：名前と PIN でログインする。"""
+    data = request.get_json(silent=True) or request.form
+    name, pin, error = validate_credentials(data)
+    if error:
+        return jsonify({"ok": False, "error": error}), 400
+
+    blocked = auth_guard(name)
+    if blocked:
+        return blocked
+
+    with get_connection() as con:
+        user = con.execute(
+            "SELECT id, name, pin_hash, balance FROM users WHERE name = ?", (name,)
+        ).fetchone()
+
+        # 名前の有無で文言を変えない（どの名前が登録済みかを探られないように）
+        if user is None or not check_password_hash(user["pin_hash"], pin):
+            record_auth_failure(name)
+            return jsonify({"ok": False, "error": "名前またはPINが違います"}), 401
+
+        con.execute(
+            "UPDATE users SET last_login_at = ? WHERE id = ?", (now_text(), user["id"])
+        )
+        con.commit()
+
+    with _auth_guard_lock:
+        _auth_failures.pop(name, None)
+
+    start_session(user["id"])
+    return jsonify({"ok": True, "user": user_json(user)})
+
+
+@app.route("/auth/logout", methods=["POST"])
+def auth_logout():
+    """観客：「体験を終える」または無操作60秒でログアウトする。"""
+    session.clear()
+    return jsonify({"ok": True})
+
+
+@app.route("/me")
+def me():
+    """ログイン状態と残高。未ログインでも 200 で logged_in=false を返す。"""
+    user = current_user()
+    if user is None:
+        return jsonify({"ok": True, "logged_in": False, "user": None})
+    return jsonify({"ok": True, "logged_in": True, "user": user_json(user)})
+
+
+# ==================================================
+# チケット購入（模擬決済 / 要件定義書 機能3）
+# 購入記録の追加と残高の加算を同じトランザクションで確定させる。
+# ==================================================
+@app.route("/purchase", methods=["POST"])
+def purchase():
+    """観客：チケットパックを模擬決済で購入し、残高に加算する。"""
+    user = current_user()
+    if user is None:
+        return login_required_response()
+
+    data = request.get_json(silent=True) or request.form
+    pack_code = str(data.get("pack", "")).strip()
+    if pack_code not in TICKET_PACKS:
+        return jsonify({"ok": False, "error": "存在しないチケットパックです"}), 400
+
+    if too_fast(_last_purchase_at, PAY_MIN_INTERVAL_SEC):
+        return jsonify(
+            {"ok": False, "error": "操作が速すぎます。少し待ってからもう一度お願いします"}
+        ), 429
+
+    pack = TICKET_PACKS[pack_code]
+    payment_result = process_payment(pack["price"], user["name"])
+    if not payment_result["success"]:
+        return jsonify({"ok": False, "error": "決済に失敗しました"}), 400
+
+    created_at = now_text()
+    with get_connection() as con:
+        cur = con.cursor()
+        cur.execute(
+            """
+            INSERT INTO purchases
+            (user_id, payment_id, pack, tickets, price, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                user["id"],
+                payment_result["payment_id"],
+                pack_code,
+                pack["tickets"],
+                pack["price"],
+                payment_result["status"],
+                created_at,
+            ),
+        )
+        purchase_id = cur.lastrowid
+        cur.execute(
+            "UPDATE users SET balance = balance + ? WHERE id = ?",
+            (pack["tickets"], user["id"]),
+        )
+        balance = cur.execute(
+            "SELECT balance FROM users WHERE id = ?", (user["id"],)
+        ).fetchone()["balance"]
+        con.commit()
+
+    return jsonify(
+        {
+            "ok": True,
+            "message": "%sを追加しました（模擬決済・実際の請求はありません）" % pack["label"],
+            "purchase_id": purchase_id,
+            "payment_id": payment_result["payment_id"],
+            "pack": pack_code,
+            "tickets": pack["tickets"],
+            "price": pack["price"],
+            "balance": balance,
+        }
+    )
+
+
+# ==================================================
+# チケット消費（要件定義書 機能4）
+# 残高の減算・取引・命令・ミッションを1つのトランザクションで確定させる。
+# 減算は「残高が足りるときだけ減らす」UPDATE なので、同時に押されても負にならない。
+# ==================================================
 @app.route("/pay", methods=["POST"])
 def pay():
-    """観客：投げ銭をしてロボット操作命令を登録する。"""
+    """観客：チケットを消費してロボット操作命令を登録する。"""
+    user = current_user()
+    if user is None:
+        return login_required_response()
+
     data = request.get_json(silent=True) or request.form
 
-    payer_name = clean_text(data.get("payer_name", "")) or "匿名"
-    action = data.get("action", "").strip()
+    # 名前はログイン中の会員名を使う（本文の payer_name は見ない）
+    payer_name = user["name"]
+    action = str(data.get("action", "")).strip()
     message = clean_text(data.get("message", ""))
 
     if action not in ACTIONS:
         return jsonify({"ok": False, "error": "存在しないアクションです"}), 400
-
-    if len(payer_name) > MAX_PAYER_NAME_LEN:
-        return jsonify(
-            {"ok": False, "error": "名前は%d文字までです" % MAX_PAYER_NAME_LEN}
-        ), 400
 
     if len(message) > MAX_MESSAGE_LEN:
         return jsonify(
@@ -604,15 +958,15 @@ def pay():
         ), 400
 
     # 連打の受け止め（同一端末からの最短間隔）
-    client_ip = request.remote_addr or "unknown"
+    ip = client_ip()
     now = time.time()
 
     with _pay_guard_lock:
-        if now - _last_pay_at.get(client_ip, 0.0) < PAY_MIN_INTERVAL_SEC:
+        if now - _last_pay_at.get(ip, 0.0) < PAY_MIN_INTERVAL_SEC:
             return jsonify(
                 {"ok": False, "error": "操作が速すぎます。少し待ってからもう一度お願いします"}
             ), 429
-        _last_pay_at[client_ip] = now
+        _last_pay_at[ip] = now
 
     # ロボットが捌ける以上に命令を溜めない
     with get_connection() as con:
@@ -627,33 +981,49 @@ def pay():
 
     amount = ACTIONS[action]["amount"]
     action_label = ACTIONS[action]["label"]
-
-    payment_result = process_payment(amount, payer_name)
-
-    if not payment_result["success"]:
-        return jsonify({"ok": False, "error": "決済に失敗しました"}), 400
-
+    payment_id = "ticket_" + uuid.uuid4().hex[:12]
     created_at = now_text()
 
     with get_connection() as con:
         cur = con.cursor()
 
+        # 0. 残高から減算（足りなければ何も書かずに 402）
+        cur.execute(
+            "UPDATE users SET balance = balance - ? WHERE id = ? AND balance >= ?",
+            (amount, user["id"], amount),
+        )
+        if cur.rowcount != 1:
+            con.rollback()
+            balance = con.execute(
+                "SELECT balance FROM users WHERE id = ?", (user["id"],)
+            ).fetchone()["balance"]
+            return jsonify(
+                {
+                    "ok": False,
+                    "error": "チケットが足りません（必要 %d / 残高 %d）" % (amount, balance),
+                    "insufficient": True,
+                    "required": amount,
+                    "balance": balance,
+                }
+            ), 402
+
         # 1. 取引履歴を保存
         cur.execute(
             """
             INSERT INTO transactions
-            (payment_id, timestamp, amount, action, action_label, payer_name, message, status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (user_id, payment_id, timestamp, amount, action, action_label, payer_name, message, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                payment_result["payment_id"],
+                user["id"],
+                payment_id,
                 created_at,
                 amount,
                 action,
                 action_label,
                 payer_name,
                 message,
-                payment_result["status"],
+                "paid",
                 created_at,
             ),
         )
@@ -670,7 +1040,7 @@ def pay():
         )
         command_id = cur.lastrowid
 
-        # 3. ミッション課金なら missions に active 行を立てる
+        # 3. ミッションなら missions に active 行を立てる
         #    （成功判定は A からの mission_* 検出を受ける /upload 側）
         mission_id = None
 
@@ -693,12 +1063,15 @@ def pay():
             )
             mission_id = cur.lastrowid
 
+        balance = cur.execute(
+            "SELECT balance FROM users WHERE id = ?", (user["id"],)
+        ).fetchone()["balance"]
         con.commit()
 
     return jsonify(
         {
             "ok": True,
-            "message": "決済が完了し、ロボット命令を登録しました",
+            "message": "チケットを使い、ロボット命令を登録しました",
             "transaction_id": transaction_id,
             "command_id": command_id,
             "mission_id": mission_id,
@@ -706,7 +1079,8 @@ def pay():
             "action": action,
             "action_label": action_label,
             "payer_name": payer_name,
-            "payment_id": payment_result["payment_id"],
+            "payment_id": payment_id,
+            "balance": balance,
         }
     )
 
